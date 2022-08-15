@@ -45,7 +45,10 @@
  (raw_text)
 ] @string
 
-(variable_assignment (word) @string)
+(variable_assignment 
+  name:(word) @constant
+  value:(text) @string
+)
 
 [
  "ifeq"
@@ -163,6 +166,9 @@
 (targets
   (word) @constant.macro
   (#match? @constant.macro "^(all|install|install-html|install-dvi|install-pdf|install-ps|uninstall|install-strip|clean|distclean|mostlyclean|maintainer-clean|TAGS|info|dvi|html|pdf|ps|dist|check|installcheck|installdirs)$"))
+
+(targets
+  (word) @function)
 
 ;; Builtin targets
 (targets

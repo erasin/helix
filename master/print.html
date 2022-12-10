@@ -359,6 +359,7 @@ though, we climb the syntax tree and then take the previous selection. So
 <tr><td><code>a</code></td><td>Argument/parameter</td></tr>
 <tr><td><code>o</code></td><td>Comment</td></tr>
 <tr><td><code>t</code></td><td>Test</td></tr>
+<tr><td><code>g</code></td><td>Change</td></tr>
 </tbody></table>
 </div>
 <blockquote>
@@ -675,16 +676,20 @@ it).</p>
 <tr><td><code>]D</code></td><td>Go to last diagnostic in document (<strong>LSP</strong>)</td><td><code>goto_last_diag</code></td></tr>
 <tr><td><code>]f</code></td><td>Go to next function (<strong>TS</strong>)</td><td><code>goto_next_function</code></td></tr>
 <tr><td><code>[f</code></td><td>Go to previous function (<strong>TS</strong>)</td><td><code>goto_prev_function</code></td></tr>
-<tr><td><code>]c</code></td><td>Go to next class (<strong>TS</strong>)</td><td><code>goto_next_class</code></td></tr>
-<tr><td><code>[c</code></td><td>Go to previous class (<strong>TS</strong>)</td><td><code>goto_prev_class</code></td></tr>
+<tr><td><code>]t</code></td><td>Go to next type definition (<strong>TS</strong>)</td><td><code>goto_next_class</code></td></tr>
+<tr><td><code>[t</code></td><td>Go to previous type definition (<strong>TS</strong>)</td><td><code>goto_prev_class</code></td></tr>
 <tr><td><code>]a</code></td><td>Go to next argument/parameter (<strong>TS</strong>)</td><td><code>goto_next_parameter</code></td></tr>
 <tr><td><code>[a</code></td><td>Go to previous argument/parameter (<strong>TS</strong>)</td><td><code>goto_prev_parameter</code></td></tr>
-<tr><td><code>]o</code></td><td>Go to next comment (<strong>TS</strong>)</td><td><code>goto_next_comment</code></td></tr>
-<tr><td><code>[o</code></td><td>Go to previous comment (<strong>TS</strong>)</td><td><code>goto_prev_comment</code></td></tr>
-<tr><td><code>]t</code></td><td>Go to next test (<strong>TS</strong>)</td><td><code>goto_next_test</code></td></tr>
-<tr><td><code>]t</code></td><td>Go to previous test (<strong>TS</strong>)</td><td><code>goto_prev_test</code></td></tr>
+<tr><td><code>]c</code></td><td>Go to next comment (<strong>TS</strong>)</td><td><code>goto_next_comment</code></td></tr>
+<tr><td><code>[c</code></td><td>Go to previous comment (<strong>TS</strong>)</td><td><code>goto_prev_comment</code></td></tr>
+<tr><td><code>]T</code></td><td>Go to next test (<strong>TS</strong>)</td><td><code>goto_next_test</code></td></tr>
+<tr><td><code>]T</code></td><td>Go to previous test (<strong>TS</strong>)</td><td><code>goto_prev_test</code></td></tr>
 <tr><td><code>]p</code></td><td>Go to next paragraph</td><td><code>goto_next_paragraph</code></td></tr>
 <tr><td><code>[p</code></td><td>Go to previous paragraph</td><td><code>goto_prev_paragraph</code></td></tr>
+<tr><td><code>]g</code></td><td>Go to next change</td><td><code>goto_next_change</code></td></tr>
+<tr><td><code>[g</code></td><td>Go to previous change</td><td><code>goto_prev_change</code></td></tr>
+<tr><td><code>]G</code></td><td>Go to first change</td><td><code>goto_first_change</code></td></tr>
+<tr><td><code>[G</code></td><td>Go to last change</td><td><code>goto_last_change</code></td></tr>
 <tr><td><code>[Space</code></td><td>Add newline above</td><td><code>add_newline_above</code></td></tr>
 <tr><td><code>]Space</code></td><td>Add newline below</td><td><code>add_newline_below</code></td></tr>
 </tbody></table>
@@ -874,6 +879,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>bash</td><td>✓</td><td></td><td></td><td><code>bash-language-server</code></td></tr>
 <tr><td>bass</td><td>✓</td><td></td><td></td><td><code>bass</code></td></tr>
 <tr><td>beancount</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>bibtex</td><td>✓</td><td></td><td></td><td><code>texlab</code></td></tr>
 <tr><td>bicep</td><td>✓</td><td></td><td></td><td><code>bicep-langserver</code></td></tr>
 <tr><td>c</td><td>✓</td><td>✓</td><td>✓</td><td><code>clangd</code></td></tr>
 <tr><td>c-sharp</td><td>✓</td><td>✓</td><td></td><td><code>OmniSharp</code></td></tr>
@@ -881,6 +887,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>clojure</td><td>✓</td><td></td><td></td><td><code>clojure-lsp</code></td></tr>
 <tr><td>cmake</td><td>✓</td><td>✓</td><td>✓</td><td><code>cmake-language-server</code></td></tr>
 <tr><td>comment</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>common-lisp</td><td>✓</td><td></td><td></td><td><code>cl-lsp</code></td></tr>
 <tr><td>cpon</td><td>✓</td><td></td><td>✓</td><td></td></tr>
 <tr><td>cpp</td><td>✓</td><td>✓</td><td>✓</td><td><code>clangd</code></td></tr>
 <tr><td>css</td><td>✓</td><td></td><td></td><td><code>vscode-css-language-server</code></td></tr>
@@ -925,7 +932,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>idris</td><td></td><td></td><td></td><td><code>idris2-lsp</code></td></tr>
 <tr><td>iex</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ini</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>java</td><td>✓</td><td></td><td></td><td><code>jdtls</code></td></tr>
+<tr><td>java</td><td>✓</td><td>✓</td><td></td><td><code>jdtls</code></td></tr>
 <tr><td>javascript</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>jsdoc</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>json</td><td>✓</td><td></td><td>✓</td><td><code>vscode-json-language-server</code></td></tr>
@@ -964,7 +971,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>python</td><td>✓</td><td>✓</td><td>✓</td><td><code>pylsp</code></td></tr>
 <tr><td>qml</td><td>✓</td><td></td><td>✓</td><td><code>qmlls</code></td></tr>
 <tr><td>r</td><td>✓</td><td></td><td></td><td><code>R</code></td></tr>
-<tr><td>racket</td><td></td><td></td><td></td><td><code>racket</code></td></tr>
+<tr><td>racket</td><td>✓</td><td></td><td></td><td><code>racket</code></td></tr>
 <tr><td>regex</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>rescript</td><td>✓</td><td>✓</td><td></td><td><code>rescript-language-server</code></td></tr>
 <tr><td>rmarkdown</td><td>✓</td><td></td><td>✓</td><td><code>R</code></td></tr>
@@ -1056,7 +1063,7 @@ on unix operating systems.</p>
 <tr><td><code>line-number</code></td><td>Line number display: <code>absolute</code> simply shows each line's number, while <code>relative</code> shows the distance from the current line. When unfocused or in insert mode, <code>relative</code> will still show absolute line numbers.</td><td><code>absolute</code></td></tr>
 <tr><td><code>cursorline</code></td><td>Highlight all lines with a cursor.</td><td><code>false</code></td></tr>
 <tr><td><code>cursorcolumn</code></td><td>Highlight all columns with a cursor.</td><td><code>false</code></td></tr>
-<tr><td><code>gutters</code></td><td>Gutters to display: Available are <code>diagnostics</code> and <code>line-numbers</code> and <code>spacer</code>, note that <code>diagnostics</code> also includes other features like breakpoints, 1-width padding will be inserted if gutters is non-empty</td><td><code>[&quot;diagnostics&quot;, &quot;spacer&quot;, &quot;line-numbers&quot;]</code></td></tr>
+<tr><td><code>gutters</code></td><td>Gutters to display: Available are <code>diagnostics</code> and <code>diff</code> and <code>line-numbers</code> and <code>spacer</code>, note that <code>diagnostics</code> also includes other features like breakpoints, 1-width padding will be inserted if gutters is non-empty</td><td><code>[&quot;diagnostics&quot;, &quot;spacer&quot;, &quot;line-numbers&quot;, &quot;spacer&quot;, &quot;diff&quot;]</code></td></tr>
 <tr><td><code>auto-completion</code></td><td>Enable automatic pop up of auto-completion.</td><td><code>true</code></td></tr>
 <tr><td><code>auto-format</code></td><td>Enable automatic formatting on save.</td><td><code>true</code></td></tr>
 <tr><td><code>auto-save</code></td><td>Enable automatic saving on focus moving away from Helix. Requires <a href="https://github.com/helix-editor/helix/wiki/Terminal-Support">focus event support</a> from your terminal.</td><td><code>false</code></td></tr>
@@ -1656,7 +1663,7 @@ injection-regex = &quot;^mylang$&quot;
 file-types = [&quot;mylang&quot;, &quot;myl&quot;]
 comment-token = &quot;#&quot;
 indent = { tab-width = 2, unit = &quot;  &quot; }
-language-server = { command = &quot;mylang-lsp&quot;, args = [&quot;--stdio&quot;] }
+language-server = { command = &quot;mylang-lsp&quot;, args = [&quot;--stdio&quot;], environment = { &quot;ENV1&quot; = &quot;value1&quot;, &quot;ENV2&quot; = &quot;value2&quot; } }
 formatter = { command = &quot;mylang-formatter&quot; , args = [&quot;--stdin&quot;] }
 </code></pre>
 <p>These configuration keys are available:</p>
@@ -1707,6 +1714,7 @@ system, so this rule would match against <code>.git\config</code> files on Windo
 <tr><td><code>args</code></td><td>A list of arguments to pass to the language server binary</td></tr>
 <tr><td><code>timeout</code></td><td>The maximum time a request to the language server may take, in seconds. Defaults to <code>20</code></td></tr>
 <tr><td><code>language-id</code></td><td>The language name to pass to the language server. Some language servers support multiple languages and use this field to determine which one is being served in a buffer</td></tr>
+<tr><td><code>environment</code></td><td>Any environment variables that will be used when starting the language server <code>{ &quot;KEY1&quot; = &quot;Value1&quot;, &quot;KEY2&quot; = &quot;Value2&quot; }</code></td></tr>
 </tbody></table>
 </div>
 <p>The top-level <code>config</code> field is used to configure the LSP initialization options. A <code>format</code>

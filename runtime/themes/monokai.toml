@@ -91,6 +91,12 @@
 "diagnostic.info" = { underline = { color = "#75beff", style = "curl" } }
 "diagnostic.hint" = { underline = { color = "#eeeeeb3", style = "curl" } }
 
+"ui.explorer.file" = { fg = "text" }
+"ui.explorer.dir" = { fg = "fn_declaration" }
+"ui.explorer.exe" = { fg = "text" }
+"ui.explorer.focus" = { modifiers = ["reversed"] }
+"ui.explorer.unfocus" = { bg = "#75715e" }
+
 [palette]
 type = "#A6E22E"
 keyword = "#F92672"

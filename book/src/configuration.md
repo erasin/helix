@@ -175,6 +175,8 @@ auto-pairs = false # defaults to `true`
 The default pairs are <code>(){}[]''""``</code>, but these can be customized by
 setting `auto-pairs` to a TOML table:
 
+Example
+
 ```toml
 [editor.auto-pairs]
 '(' = ')'
@@ -332,3 +334,12 @@ max-wrap = 25 # increase value to reduce forced mid-word wrapping
 max-indent-retain = 0
 wrap-indicator = ""  # set wrap-indicator to "" to hide it
 ```
+
+### `[editor.explorer]` Section
+Sets explorer side width and style.
+
+ | Key            | Description                                                                              | Default |
+ | ---            | -----------                                                                              | ------- |
+ | `column-width` | explorer side width                                                                      | 30      |
+ | `style`        | explorer item style, tree or list                                                        | tree    |
+ | `position`     | explorer widget position, embed or overlay                                               | overlay |

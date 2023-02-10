@@ -78,6 +78,14 @@
 "diagnostic.info" = { underline = { color = "bogster-teal", style = "curl"} }
 "diagnostic.hint" = { underline = { color = "bogster-blue", style = "curl"} }
 
+diagnostic = { modifiers = ["underlined"] }
+
+"ui.explorer.file" = { fg = "#e5ded6" }
+"ui.explorer.dir" = { fg = "#59dcd8" }
+"ui.explorer.exe" = { fg = "#e5ded6" }
+"ui.explorer.focus" = { modifiers = ["reversed"] }
+"ui.explorer.unfocus" = { bg = "#313f4e" }
+
 [palette]
 bogster-yellow = "#dcb659"
 bogster-lblue = "#59dcd8"

@@ -6,7 +6,8 @@ use crate::{
     keymap::{KeymapResult, Keymaps},
     ui::{
         document::{render_document, LinePos, TextRenderer, TranslatedPosition},
-        Completion, ProgressSpinners,
+        overlay::Overlay,
+        Completion, Explorer, ProgressSpinners,
     },
 };
 
@@ -22,7 +23,7 @@ use helix_core::{
 };
 use helix_view::{
     document::{Mode, SCRATCH_BUFFER_NAME},
-    editor::{CompleteAction, CursorShapeConfig},
+    editor::{CompleteAction, CursorShapeConfig, ExplorerPosition},
     graphics::{Color, CursorKind, Modifier, Rect, Style},
     input::{KeyEvent, MouseButton, MouseEvent, MouseEventKind},
     keyboard::{KeyCode, KeyModifiers},
@@ -42,6 +43,7 @@ pub struct EditorView {
     last_insert: (commands::MappableCommand, Vec<InsertEvent>),
     pub(crate) completion: Option<Completion>,
     spinners: ProgressSpinners,
+    pub(crate) explorer: Option<Overlay<Explorer>>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +68,7 @@ impl EditorView {
             last_insert: (commands::MappableCommand::normal_mode, Vec::new()),
             completion: None,
             spinners: ProgressSpinners::default(),
+            explorer: None,
         }
     }
 
@@ -1187,6 +1190,11 @@ impl Component for EditorView {
         event: &Event,
         context: &mut crate::compositor::Context,
     ) -> EventResult {
+        if let Some(explore) = self.explorer.as_mut() {
+            if let EventResult::Consumed(callback) = explore.handle_event(event, context) {
+                return EventResult::Consumed(callback);
+            }
+        }
         let mut cx = commands::Context {
             editor: context.editor,
             count: None,
@@ -1356,6 +1364,27 @@ impl Component for EditorView {
             Self::render_bufferline(cx.editor, area.with_height(1), surface);
         }
 
+        let editor_area = area.clip_bottom(1);
+        let explorer_column_width = config.explorer.column_width as u16 + 2;
+        let editor_area = if self.explorer.is_some() {
+            match config.explorer.position {
+                ExplorerPosition::Overlay => editor_area,
+                ExplorerPosition::Left => editor_area.clip_left(explorer_column_width),
+                ExplorerPosition::Right => editor_area.clip_right(explorer_column_width),
+            }
+        } else {
+            editor_area
+        };
+        cx.editor.resize(editor_area); // -1 from bottom for commandline
+
+        if let Some(explorer) = self.explorer.as_mut() {
+            if !explorer.content.is_focus() {
+                if let Some(position) = config.explorer.is_embed() {
+                    explorer.content.render_embed(area, surface, cx, &position);
+                }
+            }
+        }
+
         for (view, is_focused) in cx.editor.tree.views() {
             let doc = cx.editor.document(view.doc).unwrap();
             self.render_view(cx.editor, doc, view, area, surface, is_focused);
@@ -1430,9 +1459,30 @@ impl Component for EditorView {
         if let Some(completion) = self.completion.as_mut() {
             completion.render(area, surface, cx);
         }
+
+        if let Some(explore) = self.explorer.as_mut() {
+            if explore.content.is_focus() {
+                if let Some(position) = config.explorer.is_embed() {
+                    explore.content.render_embed(area, surface, cx, &position);
+                } else {
+                    explore.render(area, surface, cx);
+                }
+            }
+        }
     }
 
     fn cursor(&self, _area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
+        if let Some(explore) = &self.explorer {
+            if explore.content.is_focus() {
+                if editor.config().explorer.is_overlay() {
+                    return explore.cursor(_area, editor);
+                }
+                let cursor = explore.content.cursor(_area, editor);
+                if cursor.0.is_some() {
+                    return cursor;
+                }
+            }
+        }
         match editor.cursor() {
             // All block cursors are drawn manually
             (pos, CursorKind::Block) => (pos, CursorKind::Hidden),

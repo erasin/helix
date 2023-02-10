@@ -4,9 +4,9 @@ use std::{
     str,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use helix_core::hashmap;
-use helix_loader::merge_toml_values;
+use helix_loader::{merge_toml_values, FlavorLoader};
 use log::warn;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer};
@@ -49,134 +49,6 @@ impl Loader {
         }
     }
 
-    /// Loads a theme first looking in the `user_dir` then in `default_dir`
-    pub fn load(&self, name: &str) -> Result<Theme> {
-        if name == "default" {
-            return Ok(self.default());
-        }
-        if name == "base16_default" {
-            return Ok(self.base16_default());
-        }
-
-        let theme = self.load_theme(name, name, false).map(Theme::from)?;
-
-        Ok(Theme {
-            name: name.into(),
-            ..theme
-        })
-    }
-
-    // load the theme and its parent recursively and merge them
-    // `base_theme_name` is the theme from the config.toml,
-    // used to prevent some circular loading scenarios
-    fn load_theme(
-        &self,
-        name: &str,
-        base_theme_name: &str,
-        only_default_dir: bool,
-    ) -> Result<Value> {
-        let path = self.path(name, only_default_dir);
-        let theme_toml = self.load_toml(path)?;
-
-        let inherits = theme_toml.get("inherits");
-
-        let theme_toml = if let Some(parent_theme_name) = inherits {
-            let parent_theme_name = parent_theme_name.as_str().ok_or_else(|| {
-                anyhow!(
-                    "Theme: expected 'inherits' to be a string: {}",
-                    parent_theme_name
-                )
-            })?;
-
-            let parent_theme_toml = match parent_theme_name {
-                // load default themes's toml from const.
-                "default" => DEFAULT_THEME_DATA.clone(),
-                "base16_default" => BASE16_DEFAULT_THEME_DATA.clone(),
-                _ => self.load_theme(
-                    parent_theme_name,
-                    base_theme_name,
-                    base_theme_name == parent_theme_name,
-                )?,
-            };
-
-            self.merge_themes(parent_theme_toml, theme_toml)
-        } else {
-            theme_toml
-        };
-
-        Ok(theme_toml)
-    }
-
-    pub fn read_names(path: &Path) -> Vec<String> {
-        std::fs::read_dir(path)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| {
-                        let entry = entry.ok()?;
-                        let path = entry.path();
-                        (path.extension()? == "toml")
-                            .then(|| path.file_stem().unwrap().to_string_lossy().into_owned())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    // merge one theme into the parent theme
-    fn merge_themes(&self, parent_theme_toml: Value, theme_toml: Value) -> Value {
-        let parent_palette = parent_theme_toml.get("palette");
-        let palette = theme_toml.get("palette");
-
-        // handle the table seperately since it needs a `merge_depth` of 2
-        // this would conflict with the rest of the theme merge strategy
-        let palette_values = match (parent_palette, palette) {
-            (Some(parent_palette), Some(palette)) => {
-                merge_toml_values(parent_palette.clone(), palette.clone(), 2)
-            }
-            (Some(parent_palette), None) => parent_palette.clone(),
-            (None, Some(palette)) => palette.clone(),
-            (None, None) => Map::new().into(),
-        };
-
-        // add the palette correctly as nested table
-        let mut palette = Map::new();
-        palette.insert(String::from("palette"), palette_values);
-
-        // merge the theme into the parent theme
-        let theme = merge_toml_values(parent_theme_toml, theme_toml, 1);
-        // merge the before specially handled palette into the theme
-        merge_toml_values(theme, palette.into(), 1)
-    }
-
-    // Loads the theme data as `toml::Value` first from the user_dir then in default_dir
-    fn load_toml(&self, path: PathBuf) -> Result<Value> {
-        let data = std::fs::read_to_string(path)?;
-        let value = toml::from_str(&data)?;
-
-        Ok(value)
-    }
-
-    // Returns the path to the theme with the name
-    // With `only_default_dir` as false the path will first search for the user path
-    // disabled it ignores the user path and returns only the default path
-    fn path(&self, name: &str, only_default_dir: bool) -> PathBuf {
-        let filename = format!("{}.toml", name);
-
-        let user_path = self.user_dir.join(&filename);
-        if !only_default_dir && user_path.exists() {
-            user_path
-        } else {
-            self.default_dir.join(filename)
-        }
-    }
-
-    /// Lists all theme names available in default and user directory
-    pub fn names(&self) -> Vec<String> {
-        let mut names = Self::read_names(&self.user_dir);
-        names.extend(Self::read_names(&self.default_dir));
-        names
-    }
-
     pub fn default_theme(&self, true_color: bool) -> Theme {
         if true_color {
             self.default()
@@ -193,6 +65,71 @@ impl Loader {
     /// Returns the alternative 16-color default theme
     pub fn base16_default(&self) -> Theme {
         BASE16_DEFAULT_THEME.clone()
+    }
+
+    /// Load a theme first looking in the `user_dir` then in `default_dir`
+    pub fn load(&self, name: &str) -> Result<Theme> {
+        if name == "default" {
+            return Ok(self.default());
+        }
+        if name == "base16_default" {
+            return Ok(self.base16_default());
+        }
+
+        let theme = self.load_flavor(name, name, false).map(Theme::from)?;
+
+        Ok(Theme {
+            name: name.into(),
+            ..theme
+        })
+    }
+}
+
+impl FlavorLoader<Theme> for Loader {
+    fn user_dir(&self) -> &Path {
+        &self.user_dir
+    }
+
+    fn default_dir(&self) -> &Path {
+        &self.default_dir
+    }
+
+    fn log_type_display(&self) -> String {
+        "Theme".into()
+    }
+
+    fn merge_flavors(&self, parent_flavor_toml: Value, flavor_toml: Value) -> Value {
+        let parent_palette = parent_flavor_toml.get("palette");
+        let palette = flavor_toml.get("palette");
+
+        // handle the table seperately since it needs a `merge_depth` of 2
+        // this would conflict with the rest of the flavor merge strategy
+        let palette_values = match (parent_palette, palette) {
+            (Some(parent_palette), Some(palette)) => {
+                merge_toml_values(parent_palette.clone(), palette.clone(), 2)
+            }
+            (Some(parent_palette), None) => parent_palette.clone(),
+            (None, Some(palette)) => palette.clone(),
+            (None, None) => Map::new().into(),
+        };
+
+        // add the palette correctly as nested table
+        let mut palette = Map::new();
+        palette.insert(String::from("palette"), palette_values);
+
+        // merge the flavor into the parent flavor
+        let flavor = merge_toml_values(parent_flavor_toml, flavor_toml, 1);
+        // merge the before specially handled palette into the flavor
+        merge_toml_values(flavor, palette.into(), 1)
+    }
+
+    fn default_data(&self, name: &str) -> Option<Value> {
+        match name {
+            // load default themes's toml from const.
+            "default" => Some(DEFAULT_THEME_DATA.clone()),
+            "base16_default" => Some(BASE16_DEFAULT_THEME_DATA.clone()),
+            _ => None,
+        }
     }
 }
 

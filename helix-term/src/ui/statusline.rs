@@ -3,6 +3,7 @@ use helix_lsp::lsp::DiagnosticSeverity;
 use helix_view::{
     document::{Mode, SCRATCH_BUFFER_NAME},
     graphics::Rect,
+    icons::Icon,
     theme::Style,
     Document, Editor, View,
 };
@@ -20,6 +21,8 @@ pub struct RenderContext<'a> {
     pub focused: bool,
     pub spinners: &'a ProgressSpinners,
     pub parts: RenderBuffer<'a>,
+    pub filetype_icon: Option<&'a Icon>,
+    pub icons_enabled: bool,
 }
 
 impl<'a> RenderContext<'a> {
@@ -30,6 +33,25 @@ impl<'a> RenderContext<'a> {
         focused: bool,
         spinners: &'a ProgressSpinners,
     ) -> Self {
+        // Determine icon based on language name if possible
+        let mut filetype_icon = None;
+        if let Some(language_config) = doc.language_config() {
+            for filetype in &language_config.file_types {
+                let filetype_str = match filetype {
+                    helix_core::syntax::FileType::Extension(s) => s,
+                    helix_core::syntax::FileType::Suffix(s) => s,
+                };
+                filetype_icon = editor.icons.icon_from_filetype(filetype_str);
+                if filetype_icon.is_some() {
+                    break;
+                }
+            }
+        }
+        // Otherwise based on filetype
+        if filetype_icon.is_none() {
+            filetype_icon = editor.icons.icon_from_path(doc.path())
+        }
+
         RenderContext {
             editor,
             doc,
@@ -37,6 +59,8 @@ impl<'a> RenderContext<'a> {
             focused,
             spinners,
             parts: RenderBuffer::default(),
+            filetype_icon,
+            icons_enabled: editor.config().icons.statusline,
         }
     }
 }
@@ -144,6 +168,7 @@ where
         helix_view::editor::StatusLineElement::FileEncoding => render_file_encoding,
         helix_view::editor::StatusLineElement::FileLineEnding => render_file_line_ending,
         helix_view::editor::StatusLineElement::FileType => render_file_type,
+        helix_view::editor::StatusLineElement::FileTypeIcon => render_file_type_icon,
         helix_view::editor::StatusLineElement::Diagnostics => render_diagnostics,
         helix_view::editor::StatusLineElement::WorkspaceDiagnostics => render_workspace_diagnostics,
         helix_view::editor::StatusLineElement::Selections => render_selections,
@@ -235,7 +260,13 @@ where
     if warnings > 0 {
         write(
             context,
-            "●".to_string(),
+            context
+                .editor
+                .icons
+                .diagnostic
+                .warning
+                .icon_char
+                .to_string(),
             Some(context.editor.theme.get("warning")),
         );
         write(context, format!(" {} ", warnings), None);
@@ -244,7 +275,7 @@ where
     if errors > 0 {
         write(
             context,
-            "●".to_string(),
+            context.editor.icons.diagnostic.error.icon_char.to_string(),
             Some(context.editor.theme.get("error")),
         );
         write(context, format!(" {} ", errors), None);
@@ -277,7 +308,13 @@ where
     if warnings > 0 {
         write(
             context,
-            "●".to_string(),
+            context
+                .editor
+                .icons
+                .diagnostic
+                .warning
+                .icon_char
+                .to_string(),
             Some(context.editor.theme.get("warning")),
         );
         write(context, format!(" {} ", warnings), None);
@@ -286,7 +323,7 @@ where
     if errors > 0 {
         write(
             context,
-            "●".to_string(),
+            context.editor.icons.diagnostic.error.icon_char.to_string(),
             Some(context.editor.theme.get("error")),
         );
         write(context, format!(" {} ", errors), None);
@@ -405,6 +442,21 @@ where
     let file_type = context.doc.language_name().unwrap_or("text");
 
     write(context, format!(" {} ", file_type), None);
+}
+
+fn render_file_type_icon<F>(context: &mut RenderContext, write: F)
+where
+    F: Fn(&mut RenderContext, String, Option<Style>) + Copy,
+{
+    if context.icons_enabled {
+        if let Some(icon) = context.filetype_icon {
+            write(
+                context,
+                format!("{}", icon.icon_char),
+                icon.style.map(|icons_style| icons_style.into()),
+            )
+        }
+    }
 }
 
 fn render_file_name<F>(context: &mut RenderContext, write: F)

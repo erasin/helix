@@ -1004,6 +1004,8 @@ impl EditorView {
         event: &MouseEvent,
         cxt: &mut commands::Context,
     ) -> EventResult {
+        cxt.editor.reset_idle_timer();
+
         let config = cxt.editor.config();
         let MouseEvent {
             kind,

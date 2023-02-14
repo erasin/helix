@@ -1,7 +1,10 @@
 use futures_util::FutureExt;
 use helix_lsp::{
     block_on,
-    lsp::{self, CodeAction, CodeActionOrCommand, DiagnosticSeverity, NumberOrString, SymbolKind},
+    lsp::{
+        self, CodeAction, CodeActionOrCommand, CodeActionTriggerKind, DiagnosticSeverity,
+        NumberOrString, SymbolKind,
+    },
     util::{diagnostic_to_lsp_diagnostic, lsp_pos_to_pos, lsp_range_to_range, range_to_lsp_range},
     OffsetEncoding,
 };
@@ -627,6 +630,7 @@ pub fn code_action(cx: &mut Context) {
                 .map(|diag| diagnostic_to_lsp_diagnostic(doc.text(), diag, offset_encoding))
                 .collect(),
             only: None,
+            trigger_kind: Some(CodeActionTriggerKind::INVOKED),
         },
     ) {
         Some(future) => future,

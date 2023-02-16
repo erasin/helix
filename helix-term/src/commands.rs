@@ -5,10 +5,7 @@ pub(crate) mod typed;
 pub use dap::*;
 use helix_vcs::Hunk;
 pub use lsp::*;
-use tui::{
-    text::{Span, Spans},
-    widgets::Row,
-};
+use tui::{text::Span, widgets::Row};
 pub use typed::*;
 
 use helix_core::{
@@ -2006,7 +2003,7 @@ fn global_search(cx: &mut Context) {
             };
 
             if let Some(icon) = icon {
-                Spans::from(vec![icon.into(), path_span]).into()
+                Row::new(vec![icon.into(), path_span])
             } else {
                 path_span.into()
             }

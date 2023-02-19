@@ -230,6 +230,7 @@ mode.select = &quot;SELECT&quot;
 <tr><td><code>mode</code></td><td>The current editor mode (<code>mode.normal</code>/<code>mode.insert</code>/<code>mode.select</code>)</td></tr>
 <tr><td><code>spinner</code></td><td>A progress spinner indicating LSP activity</td></tr>
 <tr><td><code>file-name</code></td><td>The path/name of the opened file</td></tr>
+<tr><td><code>file-base-name</code></td><td>The basename of the opened file</td></tr>
 <tr><td><code>file-encoding</code></td><td>The encoding of the opened file if it differs from UTF-8</td></tr>
 <tr><td><code>file-line-ending</code></td><td>The file line endings (CRLF or LF)</td></tr>
 <tr><td><code>total-line-numbers</code></td><td>The total line numbers of the opened file</td></tr>
@@ -246,6 +247,7 @@ mode.select = &quot;SELECT&quot;
 </div>
 <h3 id="editorlsp-section"><a class="header" href="#editorlsp-section"><code>[editor.lsp]</code> Section</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>enable</code></td><td>Enables LSP integration. Setting to false will completely disable language servers regardless of language settings.</td><td><code>true</code></td></tr>
 <tr><td><code>display-messages</code></td><td>Display LSP progress messages below statusline<sup class="footnote-reference"><a href="#1">1</a></sup></td><td><code>false</code></td></tr>
 <tr><td><code>auto-signature-help</code></td><td>Enable automatic popup of signature help (parameter hints)</td><td><code>true</code></td></tr>
 <tr><td><code>display-signature-help-docs</code></td><td>Display docs under signature help popup</td><td><code>true</code></td></tr>
@@ -273,6 +275,8 @@ available, which is not defined by default.</p>
 <p>All git related options are only enabled in a git repository.</p>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
 <tr><td><code>hidden</code></td><td>Enables ignoring hidden files.</td><td>true</td></tr>
+<tr><td><code>follow-links</code></td><td>Follow symlinks instead of ignoring them</td><td>true</td></tr>
+<tr><td><code>deduplicate-links</code></td><td>Ignore symlinks that point at files already shown in the picker</td><td>true</td></tr>
 <tr><td><code>parents</code></td><td>Enables reading ignore files from parent directories.</td><td>true</td></tr>
 <tr><td><code>ignore</code></td><td>Enables reading <code>.ignore</code> files.</td><td>true</td></tr>
 <tr><td><code>git-ignore</code></td><td>Enables reading <code>.gitignore</code> files.</td><td>true</td></tr>
@@ -323,7 +327,7 @@ name = &quot;rust&quot;
 <h3 id="editorwhitespace-section"><a class="header" href="#editorwhitespace-section"><code>[editor.whitespace]</code> Section</a></h3>
 <p>Options for rendering whitespace with visible characters. Use <code>:set whitespace.render all</code> to temporarily enable visible whitespace.</p>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
-<tr><td><code>render</code></td><td>Whether to render whitespace. May either be <code>&quot;all&quot;</code> or <code>&quot;none&quot;</code>, or a table with sub-keys <code>space</code>, <code>tab</code>, and <code>newline</code>.</td><td><code>&quot;none&quot;</code></td></tr>
+<tr><td><code>render</code></td><td>Whether to render whitespace. May either be <code>&quot;all&quot;</code> or <code>&quot;none&quot;</code>, or a table with sub-keys <code>space</code>, <code>nbsp</code>, <code>tab</code>, and <code>newline</code>.</td><td><code>&quot;none&quot;</code></td></tr>
 <tr><td><code>characters</code></td><td>Literal characters to use when rendering whitespace. Sub-keys may be any of <code>tab</code>, <code>space</code>, <code>nbsp</code>, <code>newline</code> or <code>tabpad</code></td><td>See example below</td></tr>
 </tbody></table>
 </div>
@@ -356,6 +360,55 @@ tabpad = &quot;·&quot; # Tabs will look like &quot;→···&quot; (depending o
 render = true
 character = &quot;╎&quot; # Some characters that work well: &quot;▏&quot;, &quot;┆&quot;, &quot;┊&quot;, &quot;⸽&quot;
 skip-levels = 1
+</code></pre>
+<h3 id="editorgutters-section"><a class="header" href="#editorgutters-section"><code>[editor.gutters]</code> Section</a></h3>
+<p>For simplicity, <code>editor.gutters</code> accepts an array of gutter types, which will
+use default settings for all gutter components.</p>
+<pre><code class="language-toml">[editor]
+gutters = [&quot;diff&quot;, &quot;diagnostics&quot;, &quot;line-numbers&quot;, &quot;spacer&quot;]
+</code></pre>
+<p>To customize the behavior of gutters, the <code>[editor.gutters]</code> section must
+be used. This section contains top level settings, as well as settings for
+specific gutter components as sub-sections.</p>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>layout</code></td><td>A vector of gutters to display</td><td><code>[&quot;diagnostics&quot;, &quot;spacer&quot;, &quot;line-numbers&quot;, &quot;spacer&quot;, &quot;diff&quot;]</code></td></tr>
+</tbody></table>
+</div>
+<p>Example:</p>
+<pre><code class="language-toml">[editor.gutters]
+layout = [&quot;diff&quot;, &quot;diagnostics&quot;, &quot;line-numbers&quot;, &quot;spacer&quot;]
+</code></pre>
+<h4 id="editorguttersline-numbers-section"><a class="header" href="#editorguttersline-numbers-section"><code>[editor.gutters.line-numbers]</code> Section</a></h4>
+<p>Options for the line number gutter</p>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>min-width</code></td><td>The minimum number of characters to use</td><td><code>3</code></td></tr>
+</tbody></table>
+</div>
+<p>Example:</p>
+<pre><code class="language-toml">[editor.gutters.line-numbers]
+min-width = 1
+</code></pre>
+<h4 id="editorguttersdiagnotics-section"><a class="header" href="#editorguttersdiagnotics-section"><code>[editor.gutters.diagnotics]</code> Section</a></h4>
+<p>Currently unused</p>
+<h4 id="editorguttersdiff-section"><a class="header" href="#editorguttersdiff-section"><code>[editor.gutters.diff]</code> Section</a></h4>
+<p>Currently unused</p>
+<h4 id="editorguttersspacer-section"><a class="header" href="#editorguttersspacer-section"><code>[editor.gutters.spacer]</code> Section</a></h4>
+<p>Currently unused</p>
+<h3 id="editorsoft-wrap-section"><a class="header" href="#editorsoft-wrap-section"><code>[editor.soft-wrap]</code> Section</a></h3>
+<p>Options for soft wrapping lines that exceed the view width</p>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>enable</code></td><td>Whether soft wrapping is enabled.</td><td><code>false</code></td></tr>
+<tr><td><code>max-wrap</code></td><td>Maximum free space left at the end of the line.</td><td><code>20</code></td></tr>
+<tr><td><code>max-indent-retain</code></td><td>Maximum indentation to carry over when soft wrapping a line.</td><td><code>40</code></td></tr>
+<tr><td><code>wrap-indicator</code></td><td>Text inserted before soft wrapped lines, highlighted with <code>ui.virtual.wrap</code></td><td><code>↪ </code></td></tr>
+</tbody></table>
+</div>
+<p>Example:</p>
+<pre><code class="language-toml">[editor.soft-wrap]
+enable = true
+max-wrap = 25 # increase value to reduce forced mid-word wrapping
+max-indent-retain = 0
+wrap-indicator = &quot;&quot;  # set wrap-indicator to &quot;&quot; to hide it
 </code></pre>
 
                     </main>

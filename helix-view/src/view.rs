@@ -190,7 +190,24 @@ impl View {
     }
 
     pub fn inner_area(&self, doc: &Document) -> Rect {
-        self.area.clip_left(self.gutter_offset(doc)).clip_bottom(1) // -1 for statusline
+        // zen mode with wrap and text_width
+        let config = doc.config.load();
+        let self_width = self.inner_width(doc);
+        let text_width = doc
+            .language_config()
+            .and_then(|config| config.text_width)
+            .unwrap_or(config.text_width) as u16;
+
+        let space_width = if config.zen_mode && self_width.gt(&text_width) {
+            (self_width - text_width) / 2
+        } else {
+            0
+        };
+
+        self.area
+            .clip_left(self.gutter_offset(doc) + space_width)
+            .clip_right(space_width)
+            .clip_bottom(1) // -1 for statusline
     }
 
     pub fn inner_height(&self) -> usize {

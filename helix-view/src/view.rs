@@ -173,15 +173,27 @@ impl View {
     pub fn inner_area(&self, doc: &Document) -> Rect {
         // zen mode with wrap and text_width
         let config = doc.config.load();
-        let text_width = config.text_width as u16;
         let self_width = self.inner_width(doc);
+        let text_width = doc
+            .language_config()
+            .and_then(|config| config.text_width)
+            .unwrap_or(config.text_width) as u16;
+        let soft_wrap_at_text_width = doc
+            .language_config()
+            .and_then(|config| {
+                config
+                    .soft_wrap
+                    .as_ref()
+                    .and_then(|soft_wrap| soft_wrap.wrap_at_text_width)
+            })
+            .or(config.soft_wrap.wrap_at_text_width)
+            .unwrap_or(false);
 
-        let space_width =
-            if config.soft_wrap.wrap_at_text_width.unwrap_or(false) && self_width.gt(&text_width) {
-                (self_width - text_width) / 2
-            } else {
-                0
-            };
+        let space_width = if soft_wrap_at_text_width && self_width.gt(&text_width) {
+            (self_width - text_width) / 2
+        } else {
+            0
+        };
 
         self.area
             .clip_left(self.gutter_offset(doc) + space_width)

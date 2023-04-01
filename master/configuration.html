@@ -175,6 +175,8 @@ hidden = false
 <code>--config</code> command line argument, for example <code>hx -c path/to/custom-config.toml</code>.
 Additionally, you can reload the configuration file by sending the USR1
 signal to the Helix process on Unix operating systems, such as by using the command <code>pkill -USR1 hx</code>.</p>
+<p>Finally, you can have a <code>config.toml</code> local to a project by putting it under a <code>.helix</code> directory in your repository.
+Its settings will be merged with the configuration directory <code>config.toml</code> and the built-in configuration.</p>
 <h2 id="editor"><a class="header" href="#editor">Editor</a></h2>
 <h3 id="editor-section"><a class="header" href="#editor-section"><code>[editor]</code> Section</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
@@ -200,6 +202,7 @@ signal to the Helix process on Unix operating systems, such as by using the comm
 <tr><td><code>bufferline</code></td><td>Renders a line at the top of the editor displaying open buffers. Can be <code>always</code>, <code>never</code> or <code>multiple</code> (only shown if more than one buffer is in use)</td><td><code>never</code></td></tr>
 <tr><td><code>color-modes</code></td><td>Whether to color the mode indicator with different colors depending on the mode itself</td><td><code>false</code></td></tr>
 <tr><td><code>text-width</code></td><td>Maximum line length. Used for the <code>:reflow</code> command and soft-wrapping if <code>soft-wrap.wrap_at_text_width</code> is set</td><td><code>80</code></td></tr>
+<tr><td><code>workspace-lsp-roots</code></td><td>Directories relative to the workspace root that are treated as LSP roots. Should only be set in <code>.helix/config.toml</code></td><td><code>[]</code></td></tr>
 </tbody></table>
 </div>
 <h3 id="editorstatusline-section"><a class="header" href="#editorstatusline-section"><code>[editor.statusline]</code> Section</a></h3>
@@ -256,6 +259,7 @@ mode.select = &quot;SELECT&quot;
 <tr><td><code>auto-signature-help</code></td><td>Enable automatic popup of signature help (parameter hints)</td><td><code>true</code></td></tr>
 <tr><td><code>display-inlay-hints</code></td><td>Display inlay hints<sup class="footnote-reference"><a href="#2">2</a></sup></td><td><code>false</code></td></tr>
 <tr><td><code>display-signature-help-docs</code></td><td>Display docs under signature help popup</td><td><code>true</code></td></tr>
+<tr><td><code>snippets</code></td><td>Enables snippet completions. Requires a server restart (<code>:lsp-restart</code>) to take effect after <code>:config-reload</code>/<code>:set</code>.</td><td><code>true</code></td></tr>
 </tbody></table>
 </div>
 <div class="footnote-definition" id="1"><sup class="footnote-definition-label">1</sup>
@@ -395,7 +399,7 @@ layout = [&quot;diff&quot;, &quot;diagnostics&quot;, &quot;line-numbers&quot;, &
 <pre><code class="language-toml">[editor.gutters.line-numbers]
 min-width = 1
 </code></pre>
-<h4 id="editorguttersdiagnotics-section"><a class="header" href="#editorguttersdiagnotics-section"><code>[editor.gutters.diagnotics]</code> Section</a></h4>
+<h4 id="editorguttersdiagnostics-section"><a class="header" href="#editorguttersdiagnostics-section"><code>[editor.gutters.diagnostics]</code> Section</a></h4>
 <p>Currently unused</p>
 <h4 id="editorguttersdiff-section"><a class="header" href="#editorguttersdiff-section"><code>[editor.gutters.diff]</code> Section</a></h4>
 <p>Currently unused</p>

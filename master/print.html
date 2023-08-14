@@ -194,6 +194,7 @@ For everything else (e.g., how to install supported language servers), see the <
 <li><a href="install.html#arch-linux-extra">Arch Linux extra</a></li>
 <li><a href="install.html#nixos">NixOS</a></li>
 <li><a href="install.html#flatpak">Flatpak</a></li>
+<li><a href="install.html#snap">Snap</a></li>
 <li><a href="install.html#appimage">AppImage</a></li>
 </ul>
 </li>
@@ -280,6 +281,11 @@ accepts the new settings on first use.</p>
 <pre><code class="language-sh">flatpak install flathub com.helix_editor.Helix
 flatpak run com.helix_editor.Helix
 </code></pre>
+<h3 id="snap"><a class="header" href="#snap">Snap</a></h3>
+<p>Helix is available on <a href="https://snapcraft.io/helix">Snapcraft</a> and can be installed with:</p>
+<pre><code class="language-sh">snap install --classic helix
+</code></pre>
+<p>This will install Helix as both <code>/snap/bin/helix</code> and <code>/snap/bin/hx</code>, so make sure <code>/snap/bin</code> is in your <code>PATH</code>.</p>
 <h3 id="appimage"><a class="header" href="#appimage">AppImage</a></h3>
 <p>Install Helix using the Linux <a href="https://appimage.org/">AppImage</a> format.
 Download the official Helix AppImage from the <a href="https://github.com/helix-editor/helix/releases/latest">latest releases</a> page.</p>
@@ -445,17 +451,31 @@ example:</p>
 <li><code>&quot;hc</code> - Store the selection in register <code>h</code> and then change it (delete and enter insert mode).</li>
 <li><code>&quot;md</code> - Store the selection in register <code>m</code> and delete it.</li>
 </ul>
-<h3 id="special-registers"><a class="header" href="#special-registers">Special registers</a></h3>
+<h3 id="default-registers"><a class="header" href="#default-registers">Default registers</a></h3>
+<p>Commands that use registers, like yank (<code>y</code>), use a default register if none is specified.
+These registers are used as defaults:</p>
 <div class="table-wrapper"><table><thead><tr><th>Register character</th><th>Contains</th></tr></thead><tbody>
 <tr><td><code>/</code></td><td>Last search</td></tr>
 <tr><td><code>:</code></td><td>Last executed command</td></tr>
 <tr><td><code>&quot;</code></td><td>Last yanked text</td></tr>
-<tr><td><code>_</code></td><td>Black hole</td></tr>
+<tr><td><code>@</code></td><td>Last recorded macro</td></tr>
 </tbody></table>
 </div>
-<p>The system clipboard is not directly supported by a special register. Instead, special commands and keybindings are provided. Refer to the
-<a href="keymap.html#space-mode">key map</a> for more details.</p>
-<p>The black hole register is a no-op register, meaning that no data will be read or written to it.</p>
+<h3 id="special-registers"><a class="header" href="#special-registers">Special registers</a></h3>
+<p>Some registers have special behavior when read from and written to.</p>
+<div class="table-wrapper"><table><thead><tr><th>Register character</th><th>When read</th><th>When written</th></tr></thead><tbody>
+<tr><td><code>_</code></td><td>No values are returned</td><td>All values are discarded</td></tr>
+<tr><td><code>#</code></td><td>Selection indices (first selection is <code>1</code>, second is <code>2</code>, etc.)</td><td>This register is not writable</td></tr>
+<tr><td><code>.</code></td><td>Contents of the current selections</td><td>This register is not writable</td></tr>
+<tr><td><code>%</code></td><td>Name of the current file</td><td>This register is not writable</td></tr>
+<tr><td><code>*</code></td><td>Reads from the system clipboard</td><td>Joins and yanks to the system clipboard</td></tr>
+<tr><td><code>+</code></td><td>Reads from the primary clipboard</td><td>Joins and yanks to the primary clipboard</td></tr>
+</tbody></table>
+</div>
+<p>When yanking multiple selections to the clipboard registers, the selections
+are joined with newlines. Pasting from these registers will paste multiple
+selections if the clipboard was last yanked to by the Helix session. Otherwise
+the clipboard contents are pasted as one selection.</p>
 <h2 id="surround"><a class="header" href="#surround">Surround</a></h2>
 <p>Helix includes built-in functionality similar to <a href="https://github.com/tpope/vim-surround">vim-surround</a>.
 The keymappings have been inspired from <a href="https://github.com/machakann/vim-sandwich">vim-sandwich</a>:</p>
@@ -844,7 +864,7 @@ useful when you're simply looking over text and not actively editing it.</p>
 <tr><td><code>w</code></td><td>Enter <a href="keymap.html#window-mode">window mode</a></td><td>N/A</td></tr>
 <tr><td><code>p</code></td><td>Paste system clipboard after selections</td><td><code>paste_clipboard_after</code></td></tr>
 <tr><td><code>P</code></td><td>Paste system clipboard before selections</td><td><code>paste_clipboard_before</code></td></tr>
-<tr><td><code>y</code></td><td>Join and yank selections to clipboard</td><td><code>yank_joined_to_clipboard</code></td></tr>
+<tr><td><code>y</code></td><td>Yank selections to clipboard</td><td><code>yank_to_clipboard</code></td></tr>
 <tr><td><code>Y</code></td><td>Yank main selection to clipboard</td><td><code>yank_main_selection_to_clipboard</code></td></tr>
 <tr><td><code>R</code></td><td>Replace selections by clipboard contents</td><td><code>replace_selections_with_clipboard</code></td></tr>
 <tr><td><code>/</code></td><td>Global search in workspace folder</td><td><code>global_search</code></td></tr>
@@ -1085,7 +1105,7 @@ Languages</a> guide for more language configuration information.</p>
 <div class="table-wrapper"><table><thead><tr><th>Language</th><th>Syntax Highlighting</th><th>Treesitter Textobjects</th><th>Auto Indent</th><th>Default LSP</th></tr></thead><tbody>
 <tr><td>astro</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>awk</td><td>✓</td><td>✓</td><td></td><td><code>awk-language-server</code></td></tr>
-<tr><td>bash</td><td>✓</td><td></td><td>✓</td><td><code>bash-language-server</code></td></tr>
+<tr><td>bash</td><td>✓</td><td>✓</td><td>✓</td><td><code>bash-language-server</code></td></tr>
 <tr><td>bass</td><td>✓</td><td></td><td></td><td><code>bass</code></td></tr>
 <tr><td>beancount</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>bibtex</td><td>✓</td><td></td><td></td><td><code>texlab</code></td></tr>
@@ -1126,6 +1146,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>fish</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>forth</td><td>✓</td><td></td><td></td><td><code>forth-lsp</code></td></tr>
 <tr><td>fortran</td><td>✓</td><td></td><td>✓</td><td><code>fortls</code></td></tr>
+<tr><td>fsharp</td><td>✓</td><td></td><td></td><td><code>fsautocomplete</code></td></tr>
 <tr><td>gdscript</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>git-attributes</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>git-commit</td><td>✓</td><td>✓</td><td></td><td></td></tr>
@@ -1151,8 +1172,9 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>idris</td><td></td><td></td><td></td><td><code>idris2-lsp</code></td></tr>
 <tr><td>iex</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ini</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>java</td><td>✓</td><td>✓</td><td></td><td><code>jdtls</code></td></tr>
+<tr><td>java</td><td>✓</td><td>✓</td><td>✓</td><td><code>jdtls</code></td></tr>
 <tr><td>javascript</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
+<tr><td>jinja</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>jsdoc</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>json</td><td>✓</td><td></td><td>✓</td><td><code>vscode-json-language-server</code></td></tr>
 <tr><td>jsonnet</td><td>✓</td><td></td><td></td><td><code>jsonnet-language-server</code></td></tr>
@@ -1182,6 +1204,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>nim</td><td>✓</td><td>✓</td><td>✓</td><td><code>nimlangserver</code></td></tr>
 <tr><td>nix</td><td>✓</td><td></td><td></td><td><code>nil</code></td></tr>
 <tr><td>nu</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>nunjucks</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ocaml</td><td>✓</td><td></td><td>✓</td><td><code>ocamllsp</code></td></tr>
 <tr><td>ocaml-interface</td><td>✓</td><td></td><td></td><td><code>ocamllsp</code></td></tr>
 <tr><td>odin</td><td>✓</td><td></td><td>✓</td><td><code>ols</code></td></tr>
@@ -1191,13 +1214,14 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>pascal</td><td>✓</td><td>✓</td><td></td><td><code>pasls</code></td></tr>
 <tr><td>passwd</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>pem</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>perl</td><td>✓</td><td>✓</td><td>✓</td><td><code>perlnavigator</code></td></tr>
+<tr><td>perl</td><td>✓</td><td></td><td></td><td><code>perlnavigator</code></td></tr>
 <tr><td>php</td><td>✓</td><td>✓</td><td>✓</td><td><code>intelephense</code></td></tr>
 <tr><td>po</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+<tr><td>pod</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ponylang</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>prisma</td><td>✓</td><td></td><td></td><td><code>prisma-language-server</code></td></tr>
 <tr><td>prolog</td><td></td><td></td><td></td><td><code>swipl</code></td></tr>
-<tr><td>protobuf</td><td>✓</td><td></td><td>✓</td><td></td></tr>
+<tr><td>protobuf</td><td>✓</td><td></td><td>✓</td><td><code>bufls</code>, <code>pb</code></td></tr>
 <tr><td>prql</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>purescript</td><td>✓</td><td></td><td></td><td><code>purescript-language-server</code></td></tr>
 <tr><td>python</td><td>✓</td><td>✓</td><td>✓</td><td><code>pylsp</code></td></tr>
@@ -1224,21 +1248,23 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>sql</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>sshclientconfig</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>starlark</td><td>✓</td><td>✓</td><td></td><td></td></tr>
-<tr><td>svelte</td><td>✓</td><td></td><td></td><td><code>svelteserver</code></td></tr>
+<tr><td>svelte</td><td>✓</td><td></td><td>✓</td><td><code>svelteserver</code></td></tr>
 <tr><td>sway</td><td>✓</td><td>✓</td><td>✓</td><td><code>forc</code></td></tr>
 <tr><td>swift</td><td>✓</td><td></td><td></td><td><code>sourcekit-lsp</code></td></tr>
 <tr><td>t32</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>tablegen</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>task</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>tfvars</td><td>✓</td><td></td><td>✓</td><td><code>terraform-ls</code></td></tr>
+<tr><td>todotxt</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>toml</td><td>✓</td><td></td><td></td><td><code>taplo</code></td></tr>
 <tr><td>tsq</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>tsx</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>twig</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>typescript</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>ungrammar</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>unison</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>uxntal</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>v</td><td>✓</td><td>✓</td><td>✓</td><td><code>v</code></td></tr>
+<tr><td>v</td><td>✓</td><td>✓</td><td>✓</td><td><code>v-analyzer</code></td></tr>
 <tr><td>vala</td><td>✓</td><td></td><td></td><td><code>vala-language-server</code></td></tr>
 <tr><td>verilog</td><td>✓</td><td>✓</td><td></td><td><code>svlangserver</code></td></tr>
 <tr><td>vhdl</td><td>✓</td><td></td><td></td><td><code>vhdl_ls</code></td></tr>
@@ -1249,6 +1275,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>webc</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>wgsl</td><td>✓</td><td></td><td></td><td><code>wgsl_analyzer</code></td></tr>
 <tr><td>wit</td><td>✓</td><td></td><td>✓</td><td></td></tr>
+<tr><td>wren</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>xit</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>xml</td><td>✓</td><td></td><td>✓</td><td></td></tr>
 <tr><td>yaml</td><td>✓</td><td></td><td>✓</td><td><code>yaml-language-server</code></td></tr>
@@ -1342,9 +1369,9 @@ mode.select = &quot;SELECT&quot;
 </code></pre>
 <p>The <code>[editor.statusline]</code> key takes the following sub-keys:</p>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
-<tr><td><code>left</code></td><td>A list of elements aligned to the left of the statusline</td><td><code>[&quot;mode&quot;, &quot;spinner&quot;, &quot;file-name&quot;]</code></td></tr>
+<tr><td><code>left</code></td><td>A list of elements aligned to the left of the statusline</td><td><code>[&quot;mode&quot;, &quot;spinner&quot;, &quot;file-name&quot;, &quot;read-only-indicator&quot;, &quot;file-modification-indicator&quot;]</code></td></tr>
 <tr><td><code>center</code></td><td>A list of elements aligned to the middle of the statusline</td><td><code>[]</code></td></tr>
-<tr><td><code>right</code></td><td>A list of elements aligned to the right of the statusline</td><td><code>[&quot;diagnostics&quot;, &quot;selections&quot;, &quot;position&quot;, &quot;file-encoding&quot;]</code></td></tr>
+<tr><td><code>right</code></td><td>A list of elements aligned to the right of the statusline</td><td><code>[&quot;diagnostics&quot;, &quot;selections&quot;, &quot;register&quot;, &quot;position&quot;, &quot;file-encoding&quot;]</code></td></tr>
 <tr><td><code>separator</code></td><td>The character used to separate elements in the statusline</td><td><code>&quot;│&quot;</code></td></tr>
 <tr><td><code>mode.normal</code></td><td>The text shown in the <code>mode</code> element for normal mode</td><td><code>&quot;NOR&quot;</code></td></tr>
 <tr><td><code>mode.insert</code></td><td>The text shown in the <code>mode</code> element for insert mode</td><td><code>&quot;INS&quot;</code></td></tr>
@@ -1360,6 +1387,7 @@ mode.select = &quot;SELECT&quot;
 <tr><td><code>file-modification-indicator</code></td><td>The indicator to show whether the file is modified (a <code>[+]</code> appears when there are unsaved changes)</td></tr>
 <tr><td><code>file-encoding</code></td><td>The encoding of the opened file if it differs from UTF-8</td></tr>
 <tr><td><code>file-line-ending</code></td><td>The file line endings (CRLF or LF)</td></tr>
+<tr><td><code>read-only-indicator</code></td><td>An indicator that shows <code>[readonly]</code> when a file cannot be written</td></tr>
 <tr><td><code>total-line-numbers</code></td><td>The total line numbers of the opened file</td></tr>
 <tr><td><code>file-type</code></td><td>The type of the opened file</td></tr>
 <tr><td><code>diagnostics</code></td><td>The number of warnings and/or errors</td></tr>
@@ -1546,7 +1574,12 @@ max-wrap = 25 # increase value to reduce forced mid-word wrapping
 max-indent-retain = 0
 wrap-indicator = &quot;&quot;  # set wrap-indicator to &quot;&quot; to hide it
 </code></pre>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="themes"><a class="header" href="#themes">Themes</a></h1>
+<h3 id="editorsmart-tab-section"><a class="header" href="#editorsmart-tab-section"><code>[editor.smart-tab]</code> Section</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>enable</code></td><td>If set to true, then when the cursor is in a position with non-whitespace to its left, instead of inserting a tab, it will run <code>move_parent_node_end</code>. If there is only whitespace to the left, then it inserts a tab as normal. With the default bindings, to explicitly insert a tab character, press Shift-tab.</td><td><code>true</code></td></tr>
+<tr><td><code>supersede-menu</code></td><td>Normally, when a menu is on screen, such as when auto complete is triggered, the tab key is bound to cycling through the items. This means when menus are on screen, one cannot use the tab key to trigger the <code>smart-tab</code> command. If this option is set to true, the <code>smart-tab</code> command always takes precedence, which means one cannot use the tab key to cycle through menu items. One of the other bindings must be used instead, such as arrow keys or <code>C-n</code>/<code>C-p</code>.</td><td><code>false</code></td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="themes"><a class="header" href="#themes">Themes</a></h1>
 <p>To use a theme add <code>theme = &quot;&lt;name&gt;&quot;</code> to the top of your <a href="./configuration.html"><code>config.toml</code></a> file, or select it during runtime using <code>:theme &lt;name&gt;</code>.</p>
 <h2 id="creating-a-theme"><a class="header" href="#creating-a-theme">Creating a theme</a></h2>
 <p>Create a file with the name of your theme as the file name (i.e <code>mytheme.toml</code>) and place it in your <code>themes</code> directory (i.e <code>~/.config/helix/themes</code> or <code>%AppData%\helix\themes</code> on Windows). The directory might have to be created beforehand.</p>
@@ -2284,68 +2317,247 @@ in its <code>textobjects.scm</code> file, function navigation should also work a
 <code>function.movement</code> should be defined only if the node captured by <code>function.around</code>
 doesn't make sense in a navigation context.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="adding-indent-queries"><a class="header" href="#adding-indent-queries">Adding indent queries</a></h1>
-<p>Helix uses tree-sitter to correctly indent new lines. This requires
-a tree-sitter grammar and an <code>indent.scm</code> query file placed in
-<code>runtime/queries/{language}/indents.scm</code>. The indentation for a line
-is calculated by traversing the syntax tree from the lowest node at the
-beginning of the new line. Each of these nodes contributes to the total
-indent when it is captured by the query (in what way depends on the name
-of the capture).</p>
+<p>Helix uses tree-sitter to correctly indent new lines. This requires a tree-
+sitter grammar and an <code>indent.scm</code> query file placed in <code>runtime/queries/ {language}/indents.scm</code>. The indentation for a line is calculated by traversing
+the syntax tree from the lowest node at the beginning of the new line (see
+<a href="guides/indent.html#indent-queries">Indent queries</a>). Each of these nodes contributes to the total
+indent when it is captured by the query (in what way depends on the name of
+the capture.</p>
 <p>Note that it matters where these added indents begin. For example,
 multiple indent level increases that start on the same line only increase
-the total indent level by 1.</p>
-<h2 id="scopes-1"><a class="header" href="#scopes-1">Scopes</a></h2>
-<p>Added indents don't always apply to the whole node. For example, in most
-cases when a node should be indented, we actually only want everything
-except for its first line to be indented. For this, there are several
-scopes (more scopes may be added in the future if required):</p>
+the total indent level by 1. See <a href="guides/indent.html#capture-types">Capture types</a>.</p>
+<h2 id="indent-queries"><a class="header" href="#indent-queries">Indent queries</a></h2>
+<p>When Helix is inserting a new line through <code>o</code>, <code>O</code>, or <code>&lt;ret&gt;</code>, to determine
+the indent level for the new line, the query in <code>indents.scm</code> is run on the
+document. The starting position of the query is the end of the line above where
+a new line will be inserted.</p>
+<p>For <code>o</code>, the inserted line is the line below the cursor, so that starting
+position of the query is the end of the current line.</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn need_hero(some_hero: Hero, life: Life) -&gt; {
+    matches!(some_hero, Hero { // ←─────────────────╮
+        strong: true,//←╮  ↑  ↑                     │
+        fast: true,  // │  │  ╰── query start       │
+        sure: true,  // │  ╰───── cursor            ├─ traversal 
+        soon: true,  // ╰──────── new line inserted │  start node
+    }) &amp;&amp;            //                             │
+//  ↑                                               │
+//  ╰───────────────────────────────────────────────╯
+    some_hero &gt; life
+}
+<span class="boring">}</span></code></pre></pre>
+<p>For <code>O</code>, the newly inserted line is the <em>current</em> line, so the starting position
+of the query is the end of the line above the cursor.</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn need_hero(some_hero: Hero, life: Life) -&gt; { // ←─╮
+    matches!(some_hero, Hero { // ←╮          ↑     │
+        strong: true,//    ↑   ╭───╯          │     │
+        fast: true,  //    │   │ query start ─╯     │
+        sure: true,  //    ╰───┼ cursor             ├─ traversal
+        soon: true,  //        ╰ new line inserted  │  start node
+    }) &amp;&amp;            //                             │
+    some_hero &gt; life //                             │
+} // ←──────────────────────────────────────────────╯
+<span class="boring">}</span></code></pre></pre>
+<p>From this starting node, the syntax tree is traversed up until the root node.
+Each indent capture is collected along the way, and then combined according to
+their <a href="guides/indent.html#capture-types">capture types</a> and <a href="guides/indent.html#scopes">scopes</a> to a final indent
+level for the line.</p>
+<h3 id="capture-types"><a class="header" href="#capture-types">Capture types</a></h3>
 <ul>
-<li>
-<p><code>all</code>:
-This scope applies to the whole captured node. This is only different from
-<code>tail</code> when the captured node is the first node on its line.</p>
-</li>
-<li>
-<p><code>tail</code>:
-This scope applies to everything except for the first line of the
-captured node.</p>
-</li>
-</ul>
-<p>Every capture type has a default scope which should do the right thing
-in most situations. When a different scope is required, this can be
-changed by using a <code>#set!</code> declaration anywhere in the pattern:</p>
-<pre><code class="language-scm">(assignment_expression
-  right: (_) @indent
-  (#set! &quot;scope&quot; &quot;all&quot;))
-</code></pre>
-<h2 id="capture-types"><a class="header" href="#capture-types">Capture types</a></h2>
-<ul>
-<li>
-<p><code>@indent</code> (default scope <code>tail</code>):
-Increase the indent level by 1. Multiple occurrences in the same line
-don't stack. If there is at least one <code>@indent</code> and one <code>@outdent</code>
-capture on the same line, the indent level isn't changed at all.</p>
-</li>
-<li>
-<p><code>@outdent</code> (default scope <code>all</code>):
-Decrease the indent level by 1. The same rules as for <code>@indent</code> apply.</p>
-</li>
-<li>
-<p><code>@extend</code>:
-Extend the range of this node to the end of the line and to lines that
-are indented more than the line that this node starts on. This is useful
-for languages like Python, where for the purpose of indentation some nodes
-(like functions or classes) should also contain indented lines that follow them.</p>
-</li>
-<li>
-<p><code>@extend.prevent-once</code>:
+<li><code>@indent</code> (default scope <code>tail</code>):
+Increase the indent level by 1. Multiple occurrences in the same line <em>do not</em>
+stack. If there is at least one <code>@indent</code> and one <code>@outdent</code> capture on the
+same line, the indent level isn't changed at all.</li>
+<li><code>@outdent</code> (default scope <code>all</code>):
+Decrease the indent level by 1. The same rules as for <code>@indent</code> apply.</li>
+<li><code>@indent.always</code> (default scope <code>tail</code>):
+Increase the indent level by 1. Multiple occurrences on the same line <em>do</em>
+stack. The final indent level is <code>@indent.always</code> – <code>@outdent.always</code>. If
+an <code>@indent</code> and an <code>@indent.always</code> are on the same line, the <code>@indent</code> is
+ignored.</li>
+<li><code>@outdent.always</code> (default scope <code>all</code>):
+Decrease the indent level by 1. The same rules as for <code>@indent.always</code> apply.</li>
+<li><code>@align</code> (default scope <code>all</code>):
+Align everything inside this node to some anchor. The anchor is given
+by the start of the node captured by <code>@anchor</code> in the same pattern.
+Every pattern with an <code>@align</code> should contain exactly one <code>@anchor</code>.
+Indent (and outdent) for nodes below (in terms of their starting line)
+the <code>@align</code> node is added to the indentation required for alignment.</li>
+<li><code>@extend</code>:
+Extend the range of this node to the end of the line and to lines that are
+indented more than the line that this node starts on. This is useful for
+languages like Python, where for the purpose of indentation some nodes (like
+functions or classes) should also contain indented lines that follow them.</li>
+<li><code>@extend.prevent-once</code>:
 Prevents the first extension of an ancestor of this node. For example, in Python
-a return expression always ends the block that it is in. Note that this only stops the
-extension of the next <code>@extend</code> capture. If multiple ancestors are captured,
-only the extension of the innermost one is prevented. All other ancestors are unaffected
-(regardless of whether the innermost ancestor would actually have been extended).</p>
-</li>
+a return expression always ends the block that it is in. Note that this only
+stops the extension of the next <code>@extend</code> capture. If multiple ancestors are
+captured, only the extension of the innermost one is prevented. All other
+ancestors are unaffected (regardless of whether the innermost ancestor would
+actually have been extended).</li>
 </ul>
+<h4 id="indent--outdent"><a class="header" href="#indent--outdent"><code>@indent</code> / <code>@outdent</code></a></h4>
+<p>Consider this example:</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn shout(things: Vec&lt;Thing&gt;) {
+    //                       ↑
+    //                       ├───────────────────────╮ indent level
+    //                    @indent                    ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+    //                                               │
+    let it_all = |out| { things.filter(|thing| { //  │      1
+    //                 ↑                       ↑     │
+    //                 ├───────────────────────┼─────┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+    //              @indent                 @indent  │
+    //                                               │      2
+        thing.can_do_with(out) //                    │
+    })}; //                                          ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+  //↑↑↑                                              │      1
+} //╰┼┴──────────────────────────────────────────────┴┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+// 3x @outdent
+<span class="boring">}</span></code></pre></pre>
+<pre><code class="language-scm">((block) @indent)
+[&quot;}&quot; &quot;)&quot;] @outdent
+</code></pre>
+<p>Note how on the second line, we have two blocks begin on the same line. In this
+case, since both captures occur on the same line, they are combined and only
+result in a net increase of 1. Also note that the closing <code>}</code>s are part of the
+<code>@indent</code> captures, but the 3 <code>@outdent</code>s also combine into 1 and result in that
+line losing one indent level.</p>
+<h4 id="extend--extendprevent-once"><a class="header" href="#extend--extendprevent-once"><code>@extend</code> / <code>@extend.prevent-once</code></a></h4>
+<p>For an example of where <code>@extend</code> can be useful, consider Python, which is
+whitespace-sensitive.</p>
+<pre><code class="language-scm">]
+  (parenthesized_expression)
+  (function_definition)
+  (class_definition)
+] @indent
+
+</code></pre>
+<pre><code class="language-python">class Hero:
+    def __init__(self, strong, fast, sure, soon):#  ←─╮
+        self.is_strong = strong #                     │
+        self.is_fast = fast     # ╭─── query start    │
+        self.is_sure = sure     # │ ╭─ cursor         │
+        self.is_soon = soon     # │ │                 │
+        #     ↑            ↑      │ │                 │
+        #     │            ╰──────╯ │                 │
+        #     ╰─────────────────────╯                 │
+        #                                             ├─ traversal
+    def need_hero(self, life):         #              │  start node
+        return (                       #              │
+            self.is_strong             #              │
+            and self.is_fast           #              │
+            and self.is_sure           #              │
+            and self.is_soon           #              │
+            and self &gt; life            #              │
+        ) # ←─────────────────────────────────────────╯
+</code></pre>
+<p>Without braces to catch the scope of the function, the smallest descendant of
+the cursor on a line feed ends up being the entire inside of the class. Because
+of this, it will miss the entire function node and its indent capture, leading
+to an indent level one too small.</p>
+<p>To address this case, <code>@extend</code> tells helix to &quot;extend&quot; the captured node's span
+to the line feed and every consecutive line that has a greater indent level than
+the line of the node.</p>
+<pre><code class="language-scm">(parenthesized_expression) @indent
+
+]
+  (function_definition)
+  (class_definition)
+] @indent @extend
+
+</code></pre>
+<pre><code class="language-python">class Hero:
+    def __init__(self, strong, fast, sure, soon):#  ←─╮
+        self.is_strong = strong #                     │
+        self.is_fast = fast     # ╭─── query start    ├─ traversal
+        self.is_sure = sure     # │ ╭─ cursor         │  start node
+        self.is_soon = soon     # │ │ ←───────────────╯
+        #     ↑            ↑      │ │                 
+        #     │            ╰──────╯ │
+        #     ╰─────────────────────╯
+    def need_hero(self, life):
+        return (
+            self.is_strong
+            and self.is_fast
+            and self.is_sure
+            and self.is_soon
+            and self &gt; life
+        )
+</code></pre>
+<p>Furthermore, there are some cases where extending to everything with a greater
+indent level may not be desirable. Consider the <code>need_hero</code> function above. If
+our cursor is on the last line of the returned expression.</p>
+<pre><code class="language-python">class Hero:
+    def __init__(self, strong, fast, sure, soon):
+        self.is_strong = strong
+        self.is_fast = fast
+        self.is_sure = sure
+        self.is_soon = soon
+
+    def need_hero(self, life):
+        return (
+            self.is_strong
+            and self.is_fast
+            and self.is_sure
+            and self.is_soon
+            and self &gt; life
+        ) # ←─── cursor
+    #←────────── where cursor should go on new line
+</code></pre>
+<p>In Python, the are a few tokens that will always end a scope, such as a return
+statement. Since the scope ends, so should the indent level. But because the
+function span is extended to every line with a greater indent level, a new line
+would just continue on the same level. And an <code>@outdent</code> would not help us here
+either, since it would cause everything in the parentheses to become outdented
+as well.</p>
+<p>To help, we need to signal an end to the extension. We can do this with
+<code>@extend.prevent-once</code>.</p>
+<pre><code class="language-scm">(parenthesized_expression) @indent
+
+]
+  (function_definition)
+  (class_definition)
+] @indent @extend
+
+(return_statement) @extend.prevent-once
+</code></pre>
+<h4 id="indentalways--outdentalways"><a class="header" href="#indentalways--outdentalways"><code>@indent.always</code> / <code>@outdent.always</code></a></h4>
+<p>As mentioned before, normally if there is more than one <code>@indent</code> or <code>@outdent</code>
+capture on the same line, they are combined.</p>
+<p>Sometimes, there are cases when you may want to ensure that every indent capture
+is additive, regardless of how many occur on the same line. Consider this
+example in YAML.</p>
+<pre><code class="language-yaml">  - foo: bar
+# ↑ ↑
+# │ ╰─────────────── start of map
+# ╰───────────────── start of list element
+    baz: quux # ←─── cursor
+    # ←───────────── where the cursor should go on a new line
+    garply: waldo
+  - quux:
+      bar: baz
+    xyzzy: thud
+    fred: plugh
+</code></pre>
+<p>In YAML, you often have lists of maps. In these cases, the syntax is such that
+the list element and the map both start on the same line. But we really do want
+to start an indentation for each of these so that subsequent keys in the map
+hang over the list and align properly. This is where <code>@indent.always</code> helps.</p>
+<pre><code class="language-scm">((block_sequence_item) @item @indent.always @extend
+  (#not-one-line? @item))
+
+((block_mapping_pair
+    key: (_) @key
+    value: (_) @val
+    (#not-same-line? @key @val)
+  ) @indent.always @extend
+)
+</code></pre>
 <h2 id="predicates"><a class="header" href="#predicates">Predicates</a></h2>
 <p>In some cases, an S-expression cannot express exactly what pattern should be matched.
 For that, tree-sitter allows for predicates to appear anywhere within a pattern,
@@ -2381,7 +2593,46 @@ argument (a string).</p>
 <p><code>#same-line?</code>/<code>#not-same-line?</code>:
 The captures given by the 2 arguments must/must not start on the same line.</p>
 </li>
+<li>
+<p><code>#one-line?</code>/<code>#not-one-line?</code>:
+The captures given by the fist argument must/must span a total of one line.</p>
+</li>
 </ul>
+<h3 id="scopes-1"><a class="header" href="#scopes-1">Scopes</a></h3>
+<p>Added indents don't always apply to the whole node. For example, in most
+cases when a node should be indented, we actually only want everything
+except for its first line to be indented. For this, there are several
+scopes (more scopes may be added in the future if required):</p>
+<ul>
+<li><code>tail</code>:
+This scope applies to everything except for the first line of the
+captured node.</li>
+<li><code>all</code>:
+This scope applies to the whole captured node. This is only different from
+<code>tail</code> when the captured node is the first node on its line.</li>
+</ul>
+<p>For example, imagine we have the following function</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn aha() { // ←─────────────────────────────────────╮
+  let take = &quot;on me&quot;;  // ←──────────────╮  scope:  │
+  let take = &quot;me on&quot;;             //     ├─ &quot;tail&quot;  ├─ (block) @indent
+  let ill = be_gone_days(1 || 2); //     │          │
+} // ←───────────────────────────────────┴──────────┴─ &quot;}&quot; @outdent
+                                         //                scope: &quot;all&quot;
+<span class="boring">}</span></code></pre></pre>
+<p>We can write the following query with the <code>#set!</code> declaration:</p>
+<pre><code class="language-scm">((block) @indent
+ (#set! &quot;scope&quot; &quot;tail&quot;))
+(&quot;}&quot; @outdent
+ (#set! &quot;scope&quot; &quot;all&quot;))
+</code></pre>
+<p>As we can see, the &quot;tail&quot; scope covers the node, except for the first line.
+Everything up to and including the closing brace gets an indent level of 1.
+Then, on the closing brace, we encounter an outdent with a scope of &quot;all&quot;, which
+means the first line is included, and the indent level is cancelled out on this
+line. (Note these scopes are the defaults for <code>@indent</code> and <code>@outdent</code>—they are
+written explicitly for demonstration.)</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="adding-injection-queries"><a class="header" href="#adding-injection-queries">Adding Injection Queries</a></h1>
 <p>Writing language injection queries allows one to highlight a specific node as a different language.
 In addition to the <a href="guides/upstream-docs">standard</a> language injection options used by tree-sitter, there

@@ -186,7 +186,7 @@ Languages</a> guide for more language configuration information.</p>
 <div class="table-wrapper"><table><thead><tr><th>Language</th><th>Syntax Highlighting</th><th>Treesitter Textobjects</th><th>Auto Indent</th><th>Default LSP</th></tr></thead><tbody>
 <tr><td>astro</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>awk</td><td>✓</td><td>✓</td><td></td><td><code>awk-language-server</code></td></tr>
-<tr><td>bash</td><td>✓</td><td></td><td>✓</td><td><code>bash-language-server</code></td></tr>
+<tr><td>bash</td><td>✓</td><td>✓</td><td>✓</td><td><code>bash-language-server</code></td></tr>
 <tr><td>bass</td><td>✓</td><td></td><td></td><td><code>bass</code></td></tr>
 <tr><td>beancount</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>bibtex</td><td>✓</td><td></td><td></td><td><code>texlab</code></td></tr>
@@ -227,6 +227,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>fish</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>forth</td><td>✓</td><td></td><td></td><td><code>forth-lsp</code></td></tr>
 <tr><td>fortran</td><td>✓</td><td></td><td>✓</td><td><code>fortls</code></td></tr>
+<tr><td>fsharp</td><td>✓</td><td></td><td></td><td><code>fsautocomplete</code></td></tr>
 <tr><td>gdscript</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>git-attributes</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>git-commit</td><td>✓</td><td>✓</td><td></td><td></td></tr>
@@ -252,8 +253,9 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>idris</td><td></td><td></td><td></td><td><code>idris2-lsp</code></td></tr>
 <tr><td>iex</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ini</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>java</td><td>✓</td><td>✓</td><td></td><td><code>jdtls</code></td></tr>
+<tr><td>java</td><td>✓</td><td>✓</td><td>✓</td><td><code>jdtls</code></td></tr>
 <tr><td>javascript</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
+<tr><td>jinja</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>jsdoc</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>json</td><td>✓</td><td></td><td>✓</td><td><code>vscode-json-language-server</code></td></tr>
 <tr><td>jsonnet</td><td>✓</td><td></td><td></td><td><code>jsonnet-language-server</code></td></tr>
@@ -283,6 +285,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>nim</td><td>✓</td><td>✓</td><td>✓</td><td><code>nimlangserver</code></td></tr>
 <tr><td>nix</td><td>✓</td><td></td><td></td><td><code>nil</code></td></tr>
 <tr><td>nu</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>nunjucks</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ocaml</td><td>✓</td><td></td><td>✓</td><td><code>ocamllsp</code></td></tr>
 <tr><td>ocaml-interface</td><td>✓</td><td></td><td></td><td><code>ocamllsp</code></td></tr>
 <tr><td>odin</td><td>✓</td><td></td><td>✓</td><td><code>ols</code></td></tr>
@@ -292,13 +295,14 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>pascal</td><td>✓</td><td>✓</td><td></td><td><code>pasls</code></td></tr>
 <tr><td>passwd</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>pem</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>perl</td><td>✓</td><td>✓</td><td>✓</td><td><code>perlnavigator</code></td></tr>
+<tr><td>perl</td><td>✓</td><td></td><td></td><td><code>perlnavigator</code></td></tr>
 <tr><td>php</td><td>✓</td><td>✓</td><td>✓</td><td><code>intelephense</code></td></tr>
 <tr><td>po</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+<tr><td>pod</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>ponylang</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>prisma</td><td>✓</td><td></td><td></td><td><code>prisma-language-server</code></td></tr>
 <tr><td>prolog</td><td></td><td></td><td></td><td><code>swipl</code></td></tr>
-<tr><td>protobuf</td><td>✓</td><td></td><td>✓</td><td></td></tr>
+<tr><td>protobuf</td><td>✓</td><td></td><td>✓</td><td><code>bufls</code>, <code>pb</code></td></tr>
 <tr><td>prql</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>purescript</td><td>✓</td><td></td><td></td><td><code>purescript-language-server</code></td></tr>
 <tr><td>python</td><td>✓</td><td>✓</td><td>✓</td><td><code>pylsp</code></td></tr>
@@ -325,21 +329,23 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>sql</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>sshclientconfig</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>starlark</td><td>✓</td><td>✓</td><td></td><td></td></tr>
-<tr><td>svelte</td><td>✓</td><td></td><td></td><td><code>svelteserver</code></td></tr>
+<tr><td>svelte</td><td>✓</td><td></td><td>✓</td><td><code>svelteserver</code></td></tr>
 <tr><td>sway</td><td>✓</td><td>✓</td><td>✓</td><td><code>forc</code></td></tr>
 <tr><td>swift</td><td>✓</td><td></td><td></td><td><code>sourcekit-lsp</code></td></tr>
 <tr><td>t32</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>tablegen</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>task</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>tfvars</td><td>✓</td><td></td><td>✓</td><td><code>terraform-ls</code></td></tr>
+<tr><td>todotxt</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>toml</td><td>✓</td><td></td><td></td><td><code>taplo</code></td></tr>
 <tr><td>tsq</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>tsx</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>twig</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>typescript</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>ungrammar</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>unison</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>uxntal</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>v</td><td>✓</td><td>✓</td><td>✓</td><td><code>v</code></td></tr>
+<tr><td>v</td><td>✓</td><td>✓</td><td>✓</td><td><code>v-analyzer</code></td></tr>
 <tr><td>vala</td><td>✓</td><td></td><td></td><td><code>vala-language-server</code></td></tr>
 <tr><td>verilog</td><td>✓</td><td>✓</td><td></td><td><code>svlangserver</code></td></tr>
 <tr><td>vhdl</td><td>✓</td><td></td><td></td><td><code>vhdl_ls</code></td></tr>
@@ -350,6 +356,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>webc</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>wgsl</td><td>✓</td><td></td><td></td><td><code>wgsl_analyzer</code></td></tr>
 <tr><td>wit</td><td>✓</td><td></td><td>✓</td><td></td></tr>
+<tr><td>wren</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>xit</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>xml</td><td>✓</td><td></td><td>✓</td><td></td></tr>
 <tr><td>yaml</td><td>✓</td><td></td><td>✓</td><td><code>yaml-language-server</code></td></tr>

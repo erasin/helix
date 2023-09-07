@@ -1754,10 +1754,9 @@ impl Document {
                 config
                     .soft_wrap
                     .as_ref()
-                    .and_then(|soft_wrap| soft_wrap.wrap_at_text_width)
+                    .map(|soft_wrap| soft_wrap.wrap_at_text_width)
             })
-            .or(config.soft_wrap.wrap_at_text_width)
-            .unwrap_or(false);
+            .unwrap_or(config.soft_wrap.wrap_at_text_width);
         if soft_wrap_at_text_width {
             // We increase max_line_len by 1 because softwrap considers the newline character
             // as part of the line length while the "typical" expectation is that this is not the case.
@@ -1773,21 +1772,17 @@ impl Document {
             .as_ref()
             .and_then(|config| config.soft_wrap.as_ref());
         let enable_soft_wrap = language_soft_wrap
-            .and_then(|soft_wrap| soft_wrap.enable)
-            .or(editor_soft_wrap.enable)
-            .unwrap_or(false);
+            .map(|soft_wrap| soft_wrap.enable)
+            .unwrap_or(editor_soft_wrap.enable);
         let max_wrap = language_soft_wrap
-            .and_then(|soft_wrap| soft_wrap.max_wrap)
-            .or(config.soft_wrap.max_wrap)
-            .unwrap_or(20);
+            .map(|soft_wrap| soft_wrap.max_wrap)
+            .unwrap_or(config.soft_wrap.max_wrap);
         let max_indent_retain = language_soft_wrap
-            .and_then(|soft_wrap| soft_wrap.max_indent_retain)
-            .or(editor_soft_wrap.max_indent_retain)
-            .unwrap_or(40);
+            .map(|soft_wrap| soft_wrap.max_indent_retain)
+            .unwrap_or(editor_soft_wrap.max_indent_retain);
         let wrap_indicator = language_soft_wrap
-            .and_then(|soft_wrap| soft_wrap.wrap_indicator.clone())
-            .or_else(|| config.soft_wrap.wrap_indicator.clone())
-            .unwrap_or_else(|| "↪ ".into());
+            .map(|soft_wrap| soft_wrap.wrap_indicator.clone())
+            .unwrap_or_else(|| config.soft_wrap.wrap_indicator.clone());
         let tab_width = self.tab_width() as u16;
         TextFormat {
             soft_wrap: enable_soft_wrap && viewport_width > 10,

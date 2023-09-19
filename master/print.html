@@ -978,6 +978,7 @@ you to selectively add search terms to your selections.</p>
 <tr><td><code>Home</code></td><td>Go to first entry</td></tr>
 <tr><td><code>End</code></td><td>Go to last entry</td></tr>
 <tr><td><code>Enter</code></td><td>Open selected</td></tr>
+<tr><td><code>Alt-Enter</code></td><td>Open selected in the background without closing the picker</td></tr>
 <tr><td><code>Ctrl-s</code></td><td>Open horizontally</td></tr>
 <tr><td><code>Ctrl-v</code></td><td>Open vertically</td></tr>
 <tr><td><code>Ctrl-t</code></td><td>Toggle preview</td></tr>
@@ -1066,6 +1067,7 @@ you to selectively add search terms to your selections.</p>
 <tr><td><code>:lsp-restart</code></td><td>Restarts the language servers used by the current doc</td></tr>
 <tr><td><code>:lsp-stop</code></td><td>Stops the language servers that are used by the current doc</td></tr>
 <tr><td><code>:tree-sitter-scopes</code></td><td>Display tree sitter scopes, primarily for theming and development.</td></tr>
+<tr><td><code>:tree-sitter-highlight-name</code></td><td>Display name of tree-sitter highlight scope under the cursor.</td></tr>
 <tr><td><code>:debug-start</code>, <code>:dbg</code></td><td>Start a debug session from a given template with given parameters.</td></tr>
 <tr><td><code>:debug-remote</code>, <code>:dbg-tcp</code></td><td>Connect to a debug adapter by TCP address and start a debugging session from a given template with given parameters.</td></tr>
 <tr><td><code>:debug-eval</code></td><td>Evaluate expression in current debug context.</td></tr>
@@ -1094,6 +1096,7 @@ you to selectively add search terms to your selections.</p>
 <tr><td><code>:run-shell-command</code>, <code>:sh</code></td><td>Run a shell command</td></tr>
 <tr><td><code>:reset-diff-change</code>, <code>:diffget</code>, <code>:diffg</code></td><td>Reset the diff change at the cursor position.</td></tr>
 <tr><td><code>:clear-register</code></td><td>Clear given register. If no argument is provided, clear all registers.</td></tr>
+<tr><td><code>:redraw</code></td><td>Clear and re-render the whole UI</td></tr>
 </tbody></table>
 </div><div style="break-before: page; page-break-before: always;"></div><h1 id="language-support"><a class="header" href="#language-support">Language Support</a></h1>
 <p>The following languages and Language Servers are supported. To use
@@ -1147,7 +1150,9 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>forth</td><td>✓</td><td></td><td></td><td><code>forth-lsp</code></td></tr>
 <tr><td>fortran</td><td>✓</td><td></td><td>✓</td><td><code>fortls</code></td></tr>
 <tr><td>fsharp</td><td>✓</td><td></td><td></td><td><code>fsautocomplete</code></td></tr>
+<tr><td>gas</td><td>✓</td><td>✓</td><td></td><td></td></tr>
 <tr><td>gdscript</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
+<tr><td>gemini</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>git-attributes</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>git-commit</td><td>✓</td><td>✓</td><td></td><td></td></tr>
 <tr><td>git-config</td><td>✓</td><td></td><td></td><td></td></tr>
@@ -1214,7 +1219,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>pascal</td><td>✓</td><td>✓</td><td></td><td><code>pasls</code></td></tr>
 <tr><td>passwd</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>pem</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>perl</td><td>✓</td><td></td><td></td><td><code>perlnavigator</code></td></tr>
+<tr><td>perl</td><td>✓</td><td>✓</td><td>✓</td><td><code>perlnavigator</code></td></tr>
 <tr><td>php</td><td>✓</td><td>✓</td><td>✓</td><td><code>intelephense</code></td></tr>
 <tr><td>po</td><td>✓</td><td>✓</td><td></td><td></td></tr>
 <tr><td>pod</td><td>✓</td><td></td><td></td><td></td></tr>
@@ -1223,7 +1228,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>prolog</td><td></td><td></td><td></td><td><code>swipl</code></td></tr>
 <tr><td>protobuf</td><td>✓</td><td></td><td>✓</td><td><code>bufls</code>, <code>pb</code></td></tr>
 <tr><td>prql</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>purescript</td><td>✓</td><td></td><td></td><td><code>purescript-language-server</code></td></tr>
+<tr><td>purescript</td><td>✓</td><td>✓</td><td></td><td><code>purescript-language-server</code></td></tr>
 <tr><td>python</td><td>✓</td><td>✓</td><td>✓</td><td><code>pylsp</code></td></tr>
 <tr><td>qml</td><td>✓</td><td></td><td>✓</td><td><code>qmlls</code></td></tr>
 <tr><td>r</td><td>✓</td><td></td><td></td><td><code>R</code></td></tr>
@@ -1248,6 +1253,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>sql</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>sshclientconfig</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>starlark</td><td>✓</td><td>✓</td><td></td><td></td></tr>
+<tr><td>strace</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>svelte</td><td>✓</td><td></td><td>✓</td><td><code>svelteserver</code></td></tr>
 <tr><td>sway</td><td>✓</td><td>✓</td><td>✓</td><td><code>forc</code></td></tr>
 <tr><td>swift</td><td>✓</td><td></td><td></td><td><code>sourcekit-lsp</code></td></tr>
@@ -1351,6 +1357,7 @@ Its settings will be merged with the configuration directory <code>config.toml</
 <tr><td><code>text-width</code></td><td>Maximum line length. Used for the <code>:reflow</code> command and soft-wrapping if <code>soft-wrap.wrap-at-text-width</code> is set</td><td><code>80</code></td></tr>
 <tr><td><code>workspace-lsp-roots</code></td><td>Directories relative to the workspace root that are treated as LSP roots. Should only be set in <code>.helix/config.toml</code></td><td><code>[]</code></td></tr>
 <tr><td><code>default-line-ending</code></td><td>The line ending to use for new documents. Can be <code>native</code>, <code>lf</code>, <code>crlf</code>, <code>ff</code>, <code>cr</code> or <code>nel</code>. <code>native</code> uses the platform's native line ending (<code>crlf</code> on Windows, otherwise <code>lf</code>).</td><td><code>native</code></td></tr>
+<tr><td><code>insert-final-newline</code></td><td>Whether to automatically insert a trailing line-ending on write if missing</td><td><code>true</code></td></tr>
 </tbody></table>
 </div>
 <h3 id="editorstatusline-section"><a class="header" href="#editorstatusline-section"><code>[editor.statusline]</code> Section</a></h3>
@@ -1624,6 +1631,7 @@ so it should be defined after the normal theme options.</p>
 are listed below. The <code>[palette]</code> section in the config file takes precedence
 over it and is merged into the default palette.</p>
 <div class="table-wrapper"><table><thead><tr><th>Color Name</th></tr></thead><tbody>
+<tr><td><code>default</code></td></tr>
 <tr><td><code>black</code></td></tr>
 <tr><td><code>red</code></td></tr>
 <tr><td><code>green</code></td></tr>
@@ -2143,7 +2151,7 @@ languages = { typescript = [ { formatCommand =&quot;prettier --stdin-filepath ${
 </tbody></table>
 </div>
 <p>A <code>format</code> sub-table within <code>config</code> can be used to pass extra formatting options to
-<a href="https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/specification-3-17.md#document-formatting-request--leftwards_arrow_with_hook">Document Formatting Requests</a>.
+<a href="https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting">Document Formatting Requests</a>.
 For example, with typescript:</p>
 <pre><code class="language-toml">[language-server.typescript-language-server]
 # pass format options according to https://github.com/typescript-language-server/typescript-language-server#workspacedidchangeconfiguration omitting the &quot;[language].format.&quot; prefix.

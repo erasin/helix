@@ -1,5 +1,5 @@
 <!DOCTYPE HTML>
-<html lang="en" class="sidebar-visible no-js colibri">
+<html lang="en" class="colibri" dir="ltr">
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
@@ -10,7 +10,7 @@
         
         <meta name="description" content="">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="theme-color" content="#ffffff" />
+        <meta name="theme-color" content="#ffffff">
 
         <link rel="icon" href="favicon.svg">
         <link rel="shortcut icon" href="favicon.png">
@@ -21,8 +21,6 @@
 
         <!-- Fonts -->
         <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
-        <link rel="preconnect" href="https://fonts.gstatic.com">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="fonts/fonts.css">
 
         <!-- Highlight.js Stylesheets -->
@@ -34,7 +32,7 @@
         <link rel="stylesheet" href="custom.css">
 
     </head>
-    <body>
+    <body class="sidebar-visible no-js">
     <div id="body-container">
         <!-- Provide site root to javascript -->
         <script>
@@ -64,24 +62,29 @@
             try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
             if (theme === null || theme === undefined) { theme = default_theme; }
             var html = document.querySelector('html');
-            html.classList.remove('no-js')
             html.classList.remove('colibri')
             html.classList.add(theme);
-            html.classList.add('js');
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
         </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
 
         <!-- Hide / unhide sidebar before it is displayed -->
         <script>
-            var html = document.querySelector('html');
+            var body = document.querySelector('body');
             var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
             if (document.body.clientWidth >= 1080) {
                 try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
                 sidebar = sidebar || 'visible';
             } else {
                 sidebar = 'hidden';
             }
-            html.classList.remove('sidebar-visible');
-            html.classList.add("sidebar-" + sidebar);
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
         </script>
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
@@ -119,9 +122,9 @@
                                 <div id="menu-bar-hover-placeholder"></div>
                 <div id="menu-bar" class="menu-bar sticky">
                     <div class="left-buttons">
-                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
                             <i class="fa fa-bars"></i>
-                        </button>
+                        </label>
                         <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
                             <i class="fa fa-paint-brush"></i>
                         </button>
@@ -195,6 +198,7 @@
 <li><a href="#macos">macOS</a>
 <ul>
 <li><a href="#homebrew-core">Homebrew Core</a></li>
+<li><a href="#macports">MacPorts</a></li>
 </ul>
 </li>
 <li><a href="#windows">Windows</a>
@@ -249,9 +253,7 @@ sudo apt update
 sudo apt install helix
 </code></pre>
 <h3 id="fedorarhel"><a class="header" href="#fedorarhel">Fedora/RHEL</a></h3>
-<p>Enable the <code>COPR</code> repository for Helix:</p>
-<pre><code class="language-sh">sudo dnf copr enable varlad/helix
-sudo dnf install helix
+<pre><code class="language-sh">sudo dnf install helix
 </code></pre>
 <h3 id="arch-linux-extra"><a class="header" href="#arch-linux-extra">Arch Linux extra</a></h3>
 <p>Releases are available in the <code>extra</code> repository:</p>
@@ -289,6 +291,9 @@ Download the official Helix AppImage from the <a href="https://github.com/helix-
 <h2 id="macos"><a class="header" href="#macos">macOS</a></h2>
 <h3 id="homebrew-core"><a class="header" href="#homebrew-core">Homebrew Core</a></h3>
 <pre><code class="language-sh">brew install helix
+</code></pre>
+<h3 id="macports"><a class="header" href="#macports">MacPorts</a></h3>
+<pre><code class="language-sh">port install helix
 </code></pre>
 <h2 id="windows"><a class="header" href="#windows">Windows</a></h2>
 <p>Install on Windows using <a href="https://learn.microsoft.com/en-us/windows/package-manager/winget/">Winget</a>, <a href="https://scoop.sh/">Scoop</a>, <a href="https://chocolatey.org/">Chocolatey</a>
@@ -353,7 +358,7 @@ your <code>~/.bashrc</code> or equivalent:</p>
 <p>Or, create a symbolic link:</p>
 <pre><code class="language-sh">ln -Ts $PWD/runtime ~/.config/helix/runtime
 </code></pre>
-<p>If the above command fails to create a symbolic link because the file exists either move <code>~/.config/helix/runtime</code> to a new location or delete it, then run the symlink command above again. </p>
+<p>If the above command fails to create a symbolic link because the file exists either move <code>~/.config/helix/runtime</code> to a new location or delete it, then run the symlink command above again.</p>
 <h4 id="windows-1"><a class="header" href="#windows-1">Windows</a></h4>
 <p>Either set the <code>HELIX_RUNTIME</code> environment variable to point to the runtime files using the Windows setting (search for
 <code>Edit environment variables for your account</code>) or use the <code>setx</code> command in
@@ -381,11 +386,29 @@ following order:</p>
 <li><code>runtime/</code> sibling directory to <code>$CARGO_MANIFEST_DIR</code> directory (this is intended for
 developing and testing helix only).</li>
 <li><code>runtime/</code> subdirectory of OS-dependent helix user config directory.</li>
-<li><code>$HELIX_RUNTIME</code>.</li>
+<li><code>$HELIX_RUNTIME</code></li>
+<li>Distribution-specific fallback directory (set at compile time—not run time—
+with the <code>HELIX_DEFAULT_RUNTIME</code> environment variable)</li>
 <li><code>runtime/</code> subdirectory of path to Helix executable.</li>
 </ol>
 <p>This order also sets the priority for selecting which file will be used if multiple runtime
 directories have files with the same name.</p>
+<h4 id="note-to-packagers"><a class="header" href="#note-to-packagers">Note to packagers</a></h4>
+<p>If you are making a package of Helix for end users, to provide a good out of
+the box experience, you should set the <code>HELIX_DEFAULT_RUNTIME</code> environment
+variable at build time (before invoking <code>cargo build</code>) to a directory which
+will store the final runtime files after installation. For example, say you want
+to package the runtime into <code>/usr/lib/helix/runtime</code>. The rough steps a build
+script could follow are:</p>
+<ol>
+<li><code>export HELIX_DEFAULT_RUNTIME=/usr/lib/helix/runtime</code></li>
+<li><code>cargo build --profile opt --locked --path helix-term</code></li>
+<li><code>cp -r runtime $BUILD_DIR/usr/lib/helix/</code></li>
+<li><code>cp target/opt/hx $BUILD_DIR/usr/bin/hx</code></li>
+</ol>
+<p>This way the resulting <code>hx</code> binary will always look for its runtime directory in
+<code>/usr/lib/helix/runtime</code> if the user has no custom runtime in <code>~/.config/helix</code>
+or <code>HELIX_RUNTIME</code>.</p>
 <h3 id="validating-the-installation"><a class="header" href="#validating-the-installation">Validating the installation</a></h3>
 <p>To make sure everything is set up as expected you should run the Helix health
 check:</p>
@@ -415,7 +438,7 @@ sed -i &quot;s|Terminal=true|Terminal=false|g&quot; ~/.local/share/applications/
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next" href="usage.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="usage.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -429,7 +452,7 @@ sed -i &quot;s|Terminal=true|Terminal=false|g&quot; ~/.local/share/applications/
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next" href="usage.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="usage.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

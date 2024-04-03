@@ -59,21 +59,28 @@ impl<'a> Context<'a> {
 
     #[cfg(test)]
     pub fn dummy_editor() -> Editor {
-        use crate::config::Config;
+        use crate::{config::Config, handlers};
         use arc_swap::{access::Map, ArcSwap};
         use helix_core::syntax::{self, Configuration};
         use helix_view::theme;
-        use std::sync::Arc;
+        use std::{collections::HashMap, sync::Arc};
 
         let config = Arc::new(ArcSwap::from_pointee(Config::default()));
         Editor::new(
             Rect::new(0, 0, 60, 120),
             Arc::new(theme::Loader::new(&[])),
-            Arc::new(syntax::Loader::new(Configuration { language: vec![] })),
+            Arc::new(ArcSwap::from_pointee(
+                syntax::Loader::new(Configuration {
+                    language: vec![],
+                    language_server: HashMap::new(),
+                })
+                .unwrap(),
+            )),
             Arc::new(Arc::new(Map::new(
                 Arc::clone(&config),
                 |config: &Config| &config.editor,
             ))),
+            handlers::setup(config.clone()),
         )
     }
 }

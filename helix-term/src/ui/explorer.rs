@@ -5,6 +5,7 @@ use crate::{
 };
 use anyhow::{bail, ensure, Result};
 use helix_core::Position;
+use helix_stdx::path;
 use helix_view::{
     editor::{Action, ExplorerPosition},
     graphics::{CursorKind, Rect},
@@ -174,7 +175,7 @@ impl Explorer {
         Ok(Self {
             tree: Self::new_tree_view(current_root.clone())?,
             history: vec![],
-            show_help: false,
+            show_help: true,
             state: State::new(true, current_root),
             prompt: None,
             on_next_key: None,
@@ -566,7 +567,8 @@ impl Explorer {
     }
 
     fn new_file(&mut self, path: &str) -> Result<()> {
-        let path = helix_core::path::get_normalized_path(&PathBuf::from(path));
+        let path = path::normalize(&PathBuf::from(path));
+
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -577,7 +579,7 @@ impl Explorer {
     }
 
     fn new_folder(&mut self, path: &str) -> Result<()> {
-        let path = helix_core::path::get_normalized_path(&PathBuf::from(path));
+        let path = path::normalize(&PathBuf::from(path));
         std::fs::create_dir_all(&path)?;
         self.tree.refresh()?;
         self.reveal_file(path)

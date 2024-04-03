@@ -2845,7 +2845,7 @@ fn file_picker_in_current_directory(cx: &mut Context) {
 }
 
 fn open_or_focus_explorer(cx: &mut Context) {
-    cx.callback = Some(Box::new(
+    cx.callback.push(Box::new(
         |compositor: &mut Compositor, cx: &mut compositor::Context| {
             if let Some(editor) = compositor.find::<ui::EditorView>() {
                 match editor.explorer.as_mut() {
@@ -2861,7 +2861,7 @@ fn open_or_focus_explorer(cx: &mut Context) {
 }
 
 fn reveal_file(cx: &mut Context, path: Option<PathBuf>) {
-    cx.callback = Some(Box::new(
+    cx.callback.push(Box::new(
         |compositor: &mut Compositor, cx: &mut compositor::Context| {
             if let Some(editor) = compositor.find::<ui::EditorView>() {
                 (|| match editor.explorer.as_mut() {
@@ -6018,7 +6018,10 @@ fn jump_to_label(cx: &mut Context, labels: Vec<Range>, behaviour: Movement) {
     let doc = doc.id();
     cx.on_next_key(move |cx, event| {
         let alphabet = &cx.editor.config().jump_label_alphabet;
-        let Some(i ) = event.char().and_then(|ch| alphabet.iter().position(|&it| it == ch)) else {
+        let Some(i) = event
+            .char()
+            .and_then(|ch| alphabet.iter().position(|&it| it == ch))
+        else {
             doc_mut!(cx.editor, &doc).remove_jump_labels(view);
             return;
         };
@@ -6031,7 +6034,10 @@ fn jump_to_label(cx: &mut Context, labels: Vec<Range>, behaviour: Movement) {
         cx.on_next_key(move |cx, event| {
             doc_mut!(cx.editor, &doc).remove_jump_labels(view);
             let alphabet = &cx.editor.config().jump_label_alphabet;
-            let Some(inner ) = event.char().and_then(|ch| alphabet.iter().position(|&it| it == ch)) else {
+            let Some(inner) = event
+                .char()
+                .and_then(|ch| alphabet.iter().position(|&it| it == ch))
+            else {
                 return;
             };
             if let Some(mut range) = labels.get(outer + inner).copied() {
@@ -6051,8 +6057,8 @@ fn jump_to_label(cx: &mut Context, labels: Vec<Range>, behaviour: Movement) {
                             to
                         }
                     };
-                     Range::new(anchor, range.head)
-                }else{
+                    Range::new(anchor, range.head)
+                } else {
                     range.with_direction(Direction::Forward)
                 };
                 doc_mut!(cx.editor, &doc).set_selection(view, range.into());

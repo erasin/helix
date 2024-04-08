@@ -158,6 +158,7 @@ where
         helix_view::editor::StatusLineElement::Spacer => render_spacer,
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
+        helix_view::editor::StatusLineElement::WordCount => render_word_count,
     }
 }
 
@@ -351,6 +352,17 @@ where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
     let tot_sel = context.doc.selection(context.view.id).primary().len();
+    write(
+        context,
+        format!(" {} char{} ", tot_sel, if tot_sel == 1 { "" } else { "s" }).into(),
+    );
+}
+
+fn render_word_count<'a, F>(context: &mut RenderContext<'a>, write: F)
+where
+    F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
+{
+    let tot_sel = context.doc.text().len_chars();
     write(
         context,
         format!(" {} char{} ", tot_sel, if tot_sel == 1 { "" } else { "s" }).into(),

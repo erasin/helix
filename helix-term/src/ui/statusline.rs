@@ -305,7 +305,7 @@ fn render_primary_selection_length<'a>(context: &RenderContext) -> Spans<'a> {
 }
 
 fn render_word_count<'a>(context: &RenderContext) -> Spans<'a> {
-    let tot_sel = context.doc.origin().len();
+    let tot_sel = context.doc.text().len_chars();
     Span::raw(format!(
         " {} char{} ",
         tot_sel,

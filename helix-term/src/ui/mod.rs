@@ -300,6 +300,41 @@ pub mod completers {
             .collect()
     }
 
+    pub fn tutor(_editor: &Editor, input: &str) -> Vec<Completion> {
+        let read_names = |p: &std::path::Path| -> Vec<String> {
+            std::fs::read_dir(p)
+                .map(|entries| {
+                    entries
+                        .filter_map(|entry| {
+                            entry.ok().map(|entry| {
+                                entry
+                                    .path()
+                                    .file_stem()
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .into_owned()
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        let mut names = read_names(&helix_loader::config_dir().join("tutors"));
+        for rt_dir in helix_loader::runtime_dirs() {
+            names.extend(read_names(&rt_dir.join("tutors")));
+        }
+
+        names.push("default".into());
+        names.sort();
+        names.dedup();
+
+        fuzzy_match(input, names, false)
+            .into_iter()
+            .map(|(name, _)| ((0..), name.into()))
+            .collect()
+    }
+
     /// Recursive function to get all keys from this value and add them to vec
     fn get_keys(value: &serde_json::Value, vec: &mut Vec<String>, scope: Option<&str>) {
         if let Some(map) = value.as_object() {

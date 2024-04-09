@@ -1847,13 +1847,57 @@ fn debug_remote(
     dap_start_impl(cx, name.as_deref(), address, Some(args))
 }
 
-fn tutor(cx: &mut compositor::Context, _args: Args, event: PromptEvent) -> anyhow::Result<()> {
+fn tutor(cx: &mut compositor::Context, mut args: Args, event: PromptEvent) -> anyhow::Result<()> {
     if event != PromptEvent::Validate {
         return Ok(());
     }
 
-    let path = helix_loader::runtime_file(Path::new("tutor"));
-    cx.editor.open(&path, Action::Replace)?;
+    let default_tutor = helix_loader::runtime_file(Path::new("tutor"));
+
+<<<<<<< HEAD
+    let path = if let Some(name) = args.first() {
+        let name = name.to_lowercase();
+        if name.eq("default") {
+            None
+        } else {
+            let mut ps = helix_loader::runtime_dirs().to_vec();
+            ps.insert(0, helix_loader::config_dir());
+            ps.into_iter()
+                .map(|x| x.join("tutors").join(&name))
+                .find(|x| x.exists())
+||||||| parent of 603ae5ee6 (tutor)
+    let path = match args.is_empty() {
+        true => None,
+        false => {
+            let name = args.raw().to_lowercase();
+            if name.eq("default") {
+                None
+            } else {
+                let mut ps = helix_loader::runtime_dirs().to_vec();
+                ps.insert(0, helix_loader::config_dir());
+                ps.into_iter()
+                    .map(|x| x.join("tutors").join(&name))
+                    .find(|x| x.exists())
+            }
+=======
+    let path = if let Some(name) = args.next() {
+        let name = name.to_lowercase();
+        if name.eq("default") {
+            None
+        } else {
+            let mut ps = helix_loader::runtime_dirs().to_vec();
+            ps.insert(0, helix_loader::config_dir());
+            ps.into_iter()
+                .map(|x| x.join("tutors").join(&name))
+                .find(|x| x.exists())
+>>>>>>> 603ae5ee6 (tutor)
+        }
+    } else {
+        None
+    };
+
+    cx.editor
+        .open(&path.unwrap_or(default_tutor), Action::Replace)?;
     // Unset path to prevent accidentally saving to the original tutor file.
     doc_mut!(cx.editor).set_path(None);
     Ok(())
@@ -3284,9 +3328,9 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         aliases: &[],
         doc: "Open the tutorial.",
         fun: tutor,
-        completer: CommandCompleter::none(),
+       completer: CommandCompleter::positional(&[completers::tutor]),
         signature: Signature {
-            positionals: (0, Some(0)),
+            positionals: (0, Some(1)),
             ..Signature::DEFAULT
         },
     },

@@ -18,19 +18,6 @@ impl Default for Severity {
     }
 }
 
-/// A range of `char`s within the text.
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
-pub struct Range {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Range {
-    pub fn contains(self, pos: usize) -> bool {
-        (self.start..self.end).contains(&pos)
-    }
-}
-
 #[derive(Debug, Eq, Hash, PartialEq, Clone, Deserialize, Serialize)]
 pub enum NumberOrString {
     Number(i32),

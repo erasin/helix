@@ -140,6 +140,7 @@ The following statusline elements can be configured:
 | `display-signature-help-docs`        | Display docs under signature help popup                                                                               | `true`  |
 | `snippets`                           | Enables snippet completions. Requires a server restart (`:lsp-restart`) to take effect after `:config-reload`/`:set`. | `true`  |
 | `goto-reference-include-declaration` | Include declaration in the goto references popup.                                                                     | `true`  |
+| `display-inline-diagnostics`         | Display diagnostics under their starting line                                                                         | `true`  |
 
 [^1]: By default, a progress spinner is shown in the statusline beside the file path.
 [^2]: You may also have to activate them in the LSP config for them to appear, not just in Helix. Inlay hints in Helix are still being improved on and may be a little bit laggy/janky under some circumstances. Please report any bugs you see so we can fix them!

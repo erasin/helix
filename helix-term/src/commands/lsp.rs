@@ -304,10 +304,14 @@ fn diag_picker(
                   offset_encoding,
               },
               action| {
-            jump_to_position(cx.editor, path, diag.range, *offset_encoding, action)
+            jump_to_position(cx.editor, path, diag.range, *offset_encoding, action);
+            let (view, doc) = current!(cx.editor);
+            view.diagnostics_handler
+                .immidietly_show_diagnostic(doc, view.id);
         },
     )
     .with_preview(move |_editor, PickerDiagnostic { path, diag, .. }| {
+        // TODO: render this single diagnostic inline?
         let line = Some((diag.range.start.line as usize, diag.range.end.line as usize));
         Some((path.clone().into(), line))
     })

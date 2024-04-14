@@ -155,6 +155,7 @@ fn get_render_function<'a>(
         helix_view::editor::StatusLineElement::Spacer => render_spacer,
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
+        helix_view::editor::StatusLineElement::WordCount => render_word_count,
     }
 }
 
@@ -295,6 +296,16 @@ fn render_selections<'a>(context: &RenderContext) -> Spans<'a> {
 
 fn render_primary_selection_length<'a>(context: &RenderContext) -> Spans<'a> {
     let tot_sel = context.doc.selection(context.view.id).primary().len();
+    Span::raw(format!(
+        " {} char{} ",
+        tot_sel,
+        if tot_sel == 1 { "" } else { "s" }
+    ))
+    .into()
+}
+
+fn render_word_count<'a>(context: &RenderContext) -> Spans<'a> {
+    let tot_sel = context.doc.text().len_chars();
     Span::raw(format!(
         " {} char{} ",
         tot_sel,

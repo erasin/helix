@@ -1,4 +1,5 @@
 //! LSP diagnostic utility types.
+pub use helix_stdx::range::Range;
 use serde::{Deserialize, Serialize};
 
 /// Describes the severity level of a [`Diagnostic`].

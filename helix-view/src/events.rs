@@ -2,7 +2,6 @@ use helix_core::{ChangeSet, Rope};
 use helix_event::events;
 
 use crate::{Document, DocumentId, Editor, ViewId};
-use crate::{Document, DocumentId, Editor, ViewId};
 
 events! {
     DocumentDidChange<'a> {

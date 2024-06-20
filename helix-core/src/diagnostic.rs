@@ -20,12 +20,6 @@ impl Default for Severity {
     }
 }
 
-impl Range {
-    pub fn contains(self, pos: usize) -> bool {
-        (self.start..self.end).contains(&pos)
-    }
-}
-
 #[derive(Debug, Eq, Hash, PartialEq, Clone, Deserialize, Serialize)]
 pub enum NumberOrString {
     Number(i32),

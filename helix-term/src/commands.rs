@@ -4,7 +4,10 @@ pub(crate) mod typed;
 
 pub use dap::*;
 use helix_event::status;
-use helix_stdx::rope::{self, RopeSliceExt};
+use helix_stdx::{
+    path::expand_tilde,
+    rope::{self, RopeSliceExt},
+};
 use helix_vcs::{FileChange, Hunk};
 pub use lsp::*;
 use tui::{
@@ -23,7 +26,7 @@ use helix_core::{
     history::UndoKind,
     increment, indent,
     indent::IndentStyle,
-    line_ending::{get_line_ending_of_str, line_end_char_index, str_is_line_ending},
+    line_ending::{get_line_ending_of_str, line_end_char_index},
     match_brackets,
     movement::{self, move_vertically_visual, Direction},
     object, pos_at_coords,
@@ -35,7 +38,7 @@ use helix_core::{
     textobject,
     unicode::width::UnicodeWidthChar,
     visual_offset_from_block, Deletion, LineEnding, Position, Range, Rope, RopeGraphemes,
-    RopeReader, RopeSlice, Selection, SmallVec, Tendril, Transaction,
+    RopeReader, RopeSlice, Selection, SmallVec, Syntax, Tendril, Transaction,
 };
 use helix_view::{
     document::{FormatterError, Mode, SCRATCH_BUFFER_NAME},
@@ -66,6 +69,7 @@ use crate::job::{self, Jobs};
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
+    error::Error,
     fmt,
     future::Future,
     io::Read,
@@ -138,6 +142,17 @@ impl<'a> Context<'a> {
     #[inline]
     pub fn count(&self) -> usize {
         self.count.map_or(1, |v| v.get())
+    }
+
+    /// Waits on all pending jobs, and then tries to flush all pending write
+    /// operations for all documents.
+    pub fn block_try_flush_writes(&mut self) -> anyhow::Result<()> {
+        compositor::Context {
+            editor: self.editor,
+            jobs: self.jobs,
+            scroll: None,
+        }
+        .block_try_flush_writes()
     }
 }
 
@@ -323,7 +338,7 @@ impl MappableCommand {
         append_mode, "Append after selection",
         command_mode, "Enter command mode",
         file_picker, "Open file picker",
-        file_picker_in_current_buffer_directory, "Open file picker at current buffers's directory",
+        file_picker_in_current_buffer_directory, "Open file picker at current buffer's directory",
         file_picker_in_current_directory, "Open file picker at current working directory",
         code_action, "Perform code action",
         buffer_picker, "Open buffer picker",
@@ -435,8 +450,10 @@ impl MappableCommand {
         reverse_selection_contents, "Reverse selections contents",
         expand_selection, "Expand selection to parent syntax node",
         shrink_selection, "Shrink selection to previously expanded syntax node",
-        select_next_sibling, "Select next sibling in syntax tree",
-        select_prev_sibling, "Select previous sibling in syntax tree",
+        select_next_sibling, "Select next sibling in the syntax tree",
+        select_prev_sibling, "Select previous sibling the in syntax tree",
+        select_all_siblings, "Select all siblings of the current node",
+        select_all_children, "Select all children of the current node",
         jump_forward, "Jump forward on jumplist",
         jump_backward, "Jump backward on jumplist",
         save_selection, "Save current selection to jumplist",
@@ -796,28 +813,29 @@ fn goto_line_start(cx: &mut Context) {
 }
 
 fn goto_next_buffer(cx: &mut Context) {
-    goto_buffer(cx.editor, Direction::Forward);
+    goto_buffer(cx.editor, Direction::Forward, cx.count());
 }
 
 fn goto_previous_buffer(cx: &mut Context) {
-    goto_buffer(cx.editor, Direction::Backward);
+    goto_buffer(cx.editor, Direction::Backward, cx.count());
 }
 
-fn goto_buffer(editor: &mut Editor, direction: Direction) {
+fn goto_buffer(editor: &mut Editor, direction: Direction, count: usize) {
     let current = view!(editor).doc;
 
     let id = match direction {
         Direction::Forward => {
             let iter = editor.documents.keys();
-            let mut iter = iter.skip_while(|id| *id != &current);
-            iter.next(); // skip current item
-            iter.next().or_else(|| editor.documents.keys().next())
+            // skip 'count' times past current buffer
+            iter.cycle().skip_while(|id| *id != &current).nth(count)
         }
         Direction::Backward => {
             let iter = editor.documents.keys();
-            let mut iter = iter.rev().skip_while(|id| *id != &current);
-            iter.next(); // skip current item
-            iter.next().or_else(|| editor.documents.keys().next_back())
+            // skip 'count' times past current buffer
+            iter.rev()
+                .cycle()
+                .skip_while(|id| *id != &current)
+                .nth(count)
         }
     }
     .unwrap();
@@ -1198,25 +1216,51 @@ fn goto_file_impl(cx: &mut Context, action: Action) {
     let primary = selections.primary();
     // Checks whether there is only one selection with a width of 1
     if selections.len() == 1 && primary.len() == 1 {
-        let count = cx.count();
-        let text_slice = text.slice(..);
-        // In this case it selects the WORD under the cursor
-        let current_word = textobject::textobject_word(
-            text_slice,
-            primary,
-            textobject::TextObject::Inside,
-            count,
-            true,
-        );
-        // Trims some surrounding chars so that the actual file is opened.
-        let surrounding_chars: &[_] = &['\'', '"', '(', ')'];
         paths.clear();
-        paths.push(
-            current_word
-                .fragment(text_slice)
-                .trim_matches(surrounding_chars)
-                .to_string(),
-        );
+
+        let is_valid_path_char = |c: &char| {
+            #[cfg(target_os = "windows")]
+            let valid_chars = &[
+                '@', '/', '\\', '.', '-', '_', '+', '#', '$', '%', '{', '}', '[', ']', ':', '!',
+                '~', '=',
+            ];
+            #[cfg(not(target_os = "windows"))]
+            let valid_chars = &['@', '/', '.', '-', '_', '+', '#', '$', '%', '~', '=', ':'];
+
+            valid_chars.contains(c) || c.is_alphabetic() || c.is_numeric()
+        };
+
+        let cursor_pos = primary.cursor(text.slice(..));
+        let pre_cursor_pos = cursor_pos.saturating_sub(1);
+        let post_cursor_pos = cursor_pos + 1;
+        let start_pos = if is_valid_path_char(&text.char(cursor_pos)) {
+            cursor_pos
+        } else if is_valid_path_char(&text.char(pre_cursor_pos)) {
+            pre_cursor_pos
+        } else {
+            post_cursor_pos
+        };
+
+        let prefix_len = text
+            .chars_at(start_pos)
+            .reversed()
+            .take_while(is_valid_path_char)
+            .count();
+
+        let postfix_len = text
+            .chars_at(start_pos)
+            .take_while(is_valid_path_char)
+            .count();
+
+        let path: Cow<str> = text
+            .slice((start_pos - prefix_len)..(start_pos + postfix_len))
+            .into();
+        log::debug!("Goto file path: {}", path);
+
+        match expand_tilde(PathBuf::from(path.as_ref())).to_str() {
+            Some(path) => paths.push(path.to_string()),
+            None => cx.editor.set_error("Couldn't get string out of path."),
+        };
     }
 
     for sel in paths {
@@ -1226,7 +1270,8 @@ fn goto_file_impl(cx: &mut Context, action: Action) {
         }
 
         if let Ok(url) = Url::parse(p) {
-            return open_url(cx, url, action);
+            open_url(cx, url, action);
+            continue;
         }
 
         let path = &rel_path.join(p);
@@ -1563,19 +1608,11 @@ fn replace(cx: &mut Context) {
         if let Some(ch) = ch {
             let transaction = Transaction::change_by_selection(doc.text(), selection, |range| {
                 if !range.is_empty() {
-                    let text: String =
+                    let text: Tendril =
                         RopeGraphemes::new(doc.text().slice(range.from()..range.to()))
-                            .map(|g| {
-                                let cow: Cow<str> = g.into();
-                                if str_is_line_ending(&cow) {
-                                    cow
-                                } else {
-                                    ch.into()
-                                }
-                            })
+                            .map(|_g| ch)
                             .collect();
-
-                    (range.from(), range.to(), Some(text.into()))
+                    (range.from(), range.to(), Some(text))
                 } else {
                     // No change.
                     (range.from(), range.to(), None)
@@ -2050,6 +2087,11 @@ fn searcher(cx: &mut Context, direction: Direction) {
     let config = cx.editor.config();
     let scrolloff = config.scrolloff;
     let wrap_around = config.search.wrap_around;
+    let movement = if cx.editor.mode() == Mode::Select {
+        Movement::Extend
+    } else {
+        Movement::Move
+    };
 
     // TODO: could probably share with select_on_matches?
     let completions = search_completions(cx, Some(reg));
@@ -2074,7 +2116,7 @@ fn searcher(cx: &mut Context, direction: Direction) {
             search_impl(
                 cx.editor,
                 &regex,
-                Movement::Move,
+                movement,
                 direction,
                 scrolloff,
                 wrap_around,
@@ -2619,14 +2661,19 @@ fn selection_is_linewise(selection: &Selection, text: &Rope) -> bool {
     })
 }
 
-fn delete_selection_impl(cx: &mut Context, op: Operation) {
+enum YankAction {
+    Yank,
+    NoYank,
+}
+
+fn delete_selection_impl(cx: &mut Context, op: Operation, yank: YankAction) {
     let (view, doc) = current!(cx.editor);
 
     let selection = doc.selection(view.id);
     let only_whole_lines = selection_is_linewise(selection, doc.text());
 
-    if cx.register != Some('_') {
-        // first yank the selection
+    if cx.register != Some('_') && matches!(yank, YankAction::Yank) {
+        // yank the selection
         let text = doc.text().slice(..);
         let values: Vec<String> = selection.fragments(text).map(Cow::into_owned).collect();
         let reg_name = cx.register.unwrap_or('"');
@@ -2634,9 +2681,9 @@ fn delete_selection_impl(cx: &mut Context, op: Operation) {
             cx.editor.set_error(err.to_string());
             return;
         }
-    };
+    }
 
-    // then delete
+    // delete the selection
     let transaction =
         Transaction::delete_by_selection(doc.text(), selection, |range| (range.from(), range.to()));
     doc.apply(&transaction, view.id);
@@ -2702,21 +2749,19 @@ fn delete_by_selection_insert_mode(
 }
 
 fn delete_selection(cx: &mut Context) {
-    delete_selection_impl(cx, Operation::Delete);
+    delete_selection_impl(cx, Operation::Delete, YankAction::Yank);
 }
 
 fn delete_selection_noyank(cx: &mut Context) {
-    cx.register = Some('_');
-    delete_selection_impl(cx, Operation::Delete);
+    delete_selection_impl(cx, Operation::Delete, YankAction::NoYank);
 }
 
 fn change_selection(cx: &mut Context) {
-    delete_selection_impl(cx, Operation::Change);
+    delete_selection_impl(cx, Operation::Change, YankAction::Yank);
 }
 
 fn change_selection_noyank(cx: &mut Context) {
-    cx.register = Some('_');
-    delete_selection_impl(cx, Operation::Change);
+    delete_selection_impl(cx, Operation::Change, YankAction::NoYank);
 }
 
 fn collapse_selection(cx: &mut Context) {
@@ -4987,6 +5032,36 @@ pub fn extend_parent_node_start(cx: &mut Context) {
     move_node_bound_impl(cx, Direction::Backward, Movement::Extend)
 }
 
+fn select_all_impl<F>(editor: &mut Editor, select_fn: F)
+where
+    F: Fn(&Syntax, RopeSlice, Selection) -> Selection,
+{
+    let (view, doc) = current!(editor);
+
+    if let Some(syntax) = doc.syntax() {
+        let text = doc.text().slice(..);
+        let current_selection = doc.selection(view.id);
+        let selection = select_fn(syntax, text, current_selection.clone());
+        doc.set_selection(view.id, selection);
+    }
+}
+
+fn select_all_siblings(cx: &mut Context) {
+    let motion = |editor: &mut Editor| {
+        select_all_impl(editor, object::select_all_siblings);
+    };
+
+    cx.editor.apply_motion(motion);
+}
+
+fn select_all_children(cx: &mut Context) {
+    let motion = |editor: &mut Editor| {
+        select_all_impl(editor, object::select_all_children);
+    };
+
+    cx.editor.apply_motion(motion);
+}
+
 fn match_brackets(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
     let is_select = cx.editor.mode == Mode::Select;
@@ -5384,13 +5459,22 @@ fn select_textobject(cx: &mut Context, objtype: textobject::TextObject) {
                         'e' => textobject_treesitter("entry", range),
                         'p' => textobject::textobject_paragraph(text, range, objtype, count),
                         'm' => textobject::textobject_pair_surround_closest(
-                            text, range, objtype, count,
+                            doc.syntax(),
+                            text,
+                            range,
+                            objtype,
+                            count,
                         ),
                         'g' => textobject_change(range),
                         // TODO: cancel new ranges if inconsistent surround matches across lines
-                        ch if !ch.is_ascii_alphanumeric() => {
-                            textobject::textobject_pair_surround(text, range, objtype, ch, count)
-                        }
+                        ch if !ch.is_ascii_alphanumeric() => textobject::textobject_pair_surround(
+                            doc.syntax(),
+                            text,
+                            range,
+                            objtype,
+                            ch,
+                            count,
+                        ),
                         _ => range,
                     }
                 });
@@ -5415,7 +5499,8 @@ fn select_textobject(cx: &mut Context, objtype: textobject::TextObject) {
         ("c", "Comment (tree-sitter)"),
         ("T", "Test (tree-sitter)"),
         ("e", "Data structure entry (tree-sitter)"),
-        ("m", "Closest surrounding pair"),
+        ("m", "Closest surrounding pair (tree-sitter)"),
+        ("g", "Change"),
         (" ", "... or any character acting as a pair"),
     ];
 
@@ -5428,7 +5513,7 @@ fn surround_add(cx: &mut Context) {
         // surround_len is the number of new characters being added.
         let (open, close, surround_len) = match event.char() {
             Some(ch) => {
-                let (o, c) = surround::get_pair(ch);
+                let (o, c) = match_brackets::get_pair(ch);
                 let mut open = Tendril::new();
                 open.push(o);
                 let mut close = Tendril::new();
@@ -5479,13 +5564,14 @@ fn surround_replace(cx: &mut Context) {
         let text = doc.text().slice(..);
         let selection = doc.selection(view.id);
 
-        let change_pos = match surround::get_surround_pos(text, selection, surround_ch, count) {
-            Ok(c) => c,
-            Err(err) => {
-                cx.editor.set_error(err.to_string());
-                return;
-            }
-        };
+        let change_pos =
+            match surround::get_surround_pos(doc.syntax(), text, selection, surround_ch, count) {
+                Ok(c) => c,
+                Err(err) => {
+                    cx.editor.set_error(err.to_string());
+                    return;
+                }
+            };
 
         let selection = selection.clone();
         let ranges: SmallVec<[Range; 1]> = change_pos.iter().map(|&p| Range::point(p)).collect();
@@ -5500,7 +5586,7 @@ fn surround_replace(cx: &mut Context) {
                 Some(to) => to,
                 None => return doc.set_selection(view.id, selection),
             };
-            let (open, close) = surround::get_pair(to);
+            let (open, close) = match_brackets::get_pair(to);
 
             // the changeset has to be sorted to allow nested surrounds
             let mut sorted_pos: Vec<(usize, char)> = Vec::new();
@@ -5537,13 +5623,14 @@ fn surround_delete(cx: &mut Context) {
         let text = doc.text().slice(..);
         let selection = doc.selection(view.id);
 
-        let mut change_pos = match surround::get_surround_pos(text, selection, surround_ch, count) {
-            Ok(c) => c,
-            Err(err) => {
-                cx.editor.set_error(err.to_string());
-                return;
-            }
-        };
+        let mut change_pos =
+            match surround::get_surround_pos(doc.syntax(), text, selection, surround_ch, count) {
+                Ok(c) => c,
+                Err(err) => {
+                    cx.editor.set_error(err.to_string());
+                    return;
+                }
+            };
         change_pos.sort_unstable(); // the changeset has to be sorted to allow nested surrounds
         let transaction =
             Transaction::change(doc.text(), change_pos.into_iter().map(|p| (p, p + 1, None)));
@@ -5790,7 +5877,10 @@ fn shell_prompt(cx: &mut Context, prompt: Cow<'static, str>, behavior: ShellBeha
 
 fn suspend(_cx: &mut Context) {
     #[cfg(not(windows))]
-    signal_hook::low_level::raise(signal_hook::consts::signal::SIGTSTP).unwrap();
+    {
+        _cx.block_try_flush_writes().ok();
+        signal_hook::low_level::raise(signal_hook::consts::signal::SIGTSTP).unwrap();
+    }
 }
 
 fn add_newline_above(cx: &mut Context) {

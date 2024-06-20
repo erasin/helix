@@ -326,14 +326,16 @@ where
     );
 }
 
-fn render_word_count<'a>(context: &RenderContext) -> Spans<'a> {
+fn render_word_count<F>(context: &mut RenderContext, write: F)
+where
+    F: Fn(&mut RenderContext, String, Option<Style>) + Copy,
+{
     let tot_sel = context.doc.text().len_chars();
-    Span::raw(format!(
-        " {} char{} ",
-        tot_sel,
-        if tot_sel == 1 { "" } else { "s" }
-    ))
-    .into()
+    write(
+        context,
+        format!(" {} char{} ", tot_sel, if tot_sel == 1 { "" } else { "s" }),
+        None,
+    );
 }
 
 fn get_position(context: &RenderContext) -> Position {

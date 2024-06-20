@@ -1720,6 +1720,7 @@ pub fn scroll(cx: &mut Context, offset: usize, direction: Direction, sync_cursor
                 &mut annotations,
             )
         });
+        drop(annotations);
         doc.set_selection(view.id, selection);
         return;
     }
@@ -3620,6 +3621,8 @@ fn goto_first_diag(cx: &mut Context) {
         None => return,
     };
     doc.set_selection(view.id, selection);
+    view.diagnostics_handler
+        .immediately_show_diagnostic(doc, view.id);
 }
 
 fn goto_last_diag(cx: &mut Context) {
@@ -3629,6 +3632,8 @@ fn goto_last_diag(cx: &mut Context) {
         None => return,
     };
     doc.set_selection(view.id, selection);
+    view.diagnostics_handler
+        .immediately_show_diagnostic(doc, view.id);
 }
 
 fn goto_next_diag(cx: &mut Context) {
@@ -3651,6 +3656,8 @@ fn goto_next_diag(cx: &mut Context) {
             None => return,
         };
         doc.set_selection(view.id, selection);
+        view.diagnostics_handler
+            .immediately_show_diagnostic(doc, view.id);
     };
 
     cx.editor.apply_motion(motion);
@@ -3679,6 +3686,8 @@ fn goto_prev_diag(cx: &mut Context) {
             None => return,
         };
         doc.set_selection(view.id, selection);
+        view.diagnostics_handler
+            .immediately_show_diagnostic(doc, view.id);
     };
     cx.editor.apply_motion(motion)
 }

@@ -14,6 +14,7 @@ mod spinner;
 mod statusline;
 mod text;
 mod tree;
+mod text_decorations;
 
 use crate::compositor::Compositor;
 use crate::filter_picker_entry;

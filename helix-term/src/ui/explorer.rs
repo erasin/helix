@@ -432,12 +432,12 @@ impl Explorer {
                 width,
                 ..area
             },
-        }
-        .clip_bottom(1);
+        };
+        // .clip_bottom(1);
         let background = cx.editor.theme.get("ui.background");
         surface.clear_with(side_area, background);
 
-        let prompt_area = area.clip_top(side_area.height);
+        let prompt_area = area.clip_top(side_area.height - 1);
 
         let list_area = match position {
             ExplorerPosition::Left => {

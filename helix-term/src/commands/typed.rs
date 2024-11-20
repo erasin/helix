@@ -1786,7 +1786,7 @@ fn tutor(
         return Ok(());
     }
 
-    let default_tutor = helix_loader::runtime_dirs().first().unwrap().join("tutor");
+    let default_tutor = helix_loader::runtime_file(Path::new("tutor"));
 
     let path = match args.is_empty() {
         true => None,

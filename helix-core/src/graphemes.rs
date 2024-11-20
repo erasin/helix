@@ -28,6 +28,11 @@ pub enum Grapheme<'a> {
 }
 
 impl<'a> Grapheme<'a> {
+    pub fn new_decoration(g: &'static str) -> Grapheme<'a> {
+        assert_ne!(g, "\t");
+        Grapheme::new(g.into(), 0, 0)
+    }
+
     pub fn new(g: GraphemeStr<'a>, visual_x: usize, tab_width: u16) -> Grapheme<'a> {
         match g {
             g if g == "\t" => Grapheme::Tab {
@@ -275,23 +280,6 @@ pub fn ensure_grapheme_boundary_prev(slice: RopeSlice, char_idx: usize) -> usize
         char_idx
     } else {
         prev_grapheme_boundary(slice, char_idx + 1)
-    }
-}
-
-/// Returns the passed byte index if it's already a grapheme boundary,
-/// or the next grapheme boundary byte index if not.
-#[must_use]
-#[inline]
-pub fn ensure_grapheme_boundary_next_byte(slice: RopeSlice, byte_idx: usize) -> usize {
-    if byte_idx == 0 {
-        byte_idx
-    } else {
-        // TODO: optimize so we're not constructing grapheme cursor twice
-        if is_grapheme_boundary_byte(slice, byte_idx) {
-            byte_idx
-        } else {
-            next_grapheme_boundary_byte(slice, byte_idx)
-        }
     }
 }
 

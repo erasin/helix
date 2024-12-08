@@ -6,7 +6,7 @@ pub use dap::*;
 use futures_util::FutureExt;
 use helix_event::status;
 use helix_stdx::{
-    path::expand_tilde,
+    path::{self, find_paths},
     rope::{self, RopeSliceExt},
 };
 use helix_vcs::{FileChange, Hunk};
@@ -22,8 +22,8 @@ use helix_core::{
     encoding, find_workspace,
     graphemes::{self, next_grapheme_boundary, RevRopeGraphemes},
     history::UndoKind,
-    increment, indent,
-    indent::IndentStyle,
+    increment,
+    indent::{self, IndentStyle},
     line_ending::{get_line_ending_of_str, line_end_char_index},
     match_brackets,
     movement::{self, move_vertically_visual, Direction},
@@ -98,7 +98,7 @@ pub struct Context<'a> {
     pub jobs: &'a mut Jobs,
 }
 
-impl<'a> Context<'a> {
+impl Context<'_> {
     /// Push a new component onto the compositor.
     pub fn push_layer(&mut self, component: Box<dyn Component>) {
         self.callback
@@ -176,9 +176,16 @@ where
 
 use helix_view::{align_view, Align};
 
-/// A MappableCommand is either a static command like "jump_view_up" or a Typable command like
-/// :format. It causes a side-effect on the state (usually by creating and applying a transaction).
-/// Both of these types of commands can be mapped with keybindings in the config.toml.
+/// MappableCommands are commands that can be bound to keys, executable in
+/// normal, insert or select mode.
+///
+/// There are three kinds:
+///
+/// * Static: commands usually bound to keys and used for editing, movement,
+///   etc., for example `move_char_left`.
+/// * Typable: commands executable from command mode, prefixed with a `:`,
+///   for example `:write!`.
+/// * Macro: a sequence of keys to execute, for example `@miw`.
 #[derive(Clone)]
 pub enum MappableCommand {
     Typable {
@@ -190,6 +197,10 @@ pub enum MappableCommand {
         name: &'static str,
         fun: fn(cx: &mut Context),
         doc: &'static str,
+    },
+    Macro {
+        name: String,
+        keys: Vec<KeyEvent>,
     },
 }
 
@@ -227,6 +238,23 @@ impl MappableCommand {
                 }
             }
             Self::Static { fun, .. } => (fun)(cx),
+            Self::Macro { keys, .. } => {
+                // Protect against recursive macros.
+                if cx.editor.macro_replaying.contains(&'@') {
+                    cx.editor.set_error(
+                        "Cannot execute macro because the [@] register is already playing a macro",
+                    );
+                    return;
+                }
+                cx.editor.macro_replaying.push('@');
+                let keys = keys.clone();
+                cx.callback.push(Box::new(move |compositor, cx| {
+                    for key in keys.into_iter() {
+                        compositor.handle_event(&compositor::Event::Key(key), cx);
+                    }
+                    cx.editor.macro_replaying.pop();
+                }));
+            }
         }
     }
 
@@ -234,6 +262,7 @@ impl MappableCommand {
         match &self {
             Self::Typable { name, .. } => name,
             Self::Static { name, .. } => name,
+            Self::Macro { name, .. } => name,
         }
     }
 
@@ -241,6 +270,7 @@ impl MappableCommand {
         match &self {
             Self::Typable { doc, .. } => doc,
             Self::Static { doc, .. } => doc,
+            Self::Macro { name, .. } => name,
         }
     }
 
@@ -269,6 +299,10 @@ impl MappableCommand {
         move_prev_long_word_start, "Move to start of previous long word",
         move_next_long_word_end, "Move to end of next long word",
         move_prev_long_word_end, "Move to end of previous long word",
+        move_next_sub_word_start, "Move to start of next sub word",
+        move_prev_sub_word_start, "Move to start of previous sub word",
+        move_next_sub_word_end, "Move to end of next sub word",
+        move_prev_sub_word_end, "Move to end of previous sub word",
         move_parent_node_end, "Move to end of the parent node",
         move_parent_node_start, "Move to beginning of the parent node",
         extend_next_word_start, "Extend to start of next word",
@@ -279,6 +313,10 @@ impl MappableCommand {
         extend_prev_long_word_start, "Extend to start of previous long word",
         extend_next_long_word_end, "Extend to end of next long word",
         extend_prev_long_word_end, "Extend to end of prev long word",
+        extend_next_sub_word_start, "Extend to start of next sub word",
+        extend_prev_sub_word_start, "Extend to start of previous sub word",
+        extend_next_sub_word_end, "Extend to end of next sub word",
+        extend_prev_sub_word_end, "Extend to end of prev sub word",
         extend_parent_node_end, "Extend to end of the parent node",
         extend_parent_node_start, "Extend to beginning of the parent node",
         find_till_char, "Move till next occurrence of char",
@@ -315,6 +353,7 @@ impl MappableCommand {
         extend_search_next, "Add next search match to selection",
         extend_search_prev, "Add previous search match to selection",
         search_selection, "Use current selection as search pattern",
+        search_selection_detect_word_boundaries, "Use current selection as the search pattern, automatically wrapping with `\\b` on word boundaries",
         make_search_word_bounded, "Modify current search to make it word bounded",
         global_search, "Global search in workspace folder",
         extend_line, "Select current line, if already selected, extend to another line based on the anchor",
@@ -545,6 +584,11 @@ impl fmt::Debug for MappableCommand {
                 .field(name)
                 .field(args)
                 .finish(),
+            MappableCommand::Macro { name, keys, .. } => f
+                .debug_tuple("MappableCommand")
+                .field(name)
+                .field(keys)
+                .finish(),
         }
     }
 }
@@ -575,6 +619,11 @@ impl std::str::FromStr for MappableCommand {
                     args,
                 })
                 .ok_or_else(|| anyhow!("No TypableCommand named '{}'", s))
+        } else if let Some(suffix) = s.strip_prefix('@') {
+            helix_view::input::parse_macro(suffix).map(|keys| Self::Macro {
+                name: s.to_string(),
+                keys,
+            })
         } else {
             MappableCommand::STATIC_COMMAND_LIST
                 .iter()
@@ -1128,6 +1177,22 @@ fn move_next_long_word_end(cx: &mut Context) {
     move_word_impl(cx, movement::move_next_long_word_end)
 }
 
+fn move_next_sub_word_start(cx: &mut Context) {
+    move_word_impl(cx, movement::move_next_sub_word_start)
+}
+
+fn move_prev_sub_word_start(cx: &mut Context) {
+    move_word_impl(cx, movement::move_prev_sub_word_start)
+}
+
+fn move_prev_sub_word_end(cx: &mut Context) {
+    move_word_impl(cx, movement::move_prev_sub_word_end)
+}
+
+fn move_next_sub_word_end(cx: &mut Context) {
+    move_word_impl(cx, movement::move_next_sub_word_end)
+}
+
 fn goto_para_impl<F>(cx: &mut Context, move_fn: F)
 where
     F: Fn(RopeSlice, Range, usize, Movement) -> Range + 'static,
@@ -1210,53 +1275,30 @@ fn goto_file_impl(cx: &mut Context, action: Action) {
         .unwrap_or_default();
 
     let paths: Vec<_> = if selections.len() == 1 && primary.len() == 1 {
-        // Secial case: if there is only one one-width selection, try to detect the
-        // path under the cursor.
-        let is_valid_path_char = |c: &char| {
-            #[cfg(target_os = "windows")]
-            let valid_chars = &[
-                '@', '/', '\\', '.', '-', '_', '+', '#', '$', '%', '{', '}', '[', ']', ':', '!',
-                '~', '=',
-            ];
-            #[cfg(not(target_os = "windows"))]
-            let valid_chars = &['@', '/', '.', '-', '_', '+', '#', '$', '%', '~', '=', ':'];
-
-            valid_chars.contains(c) || c.is_alphabetic() || c.is_numeric()
-        };
-
-        let cursor_pos = primary.cursor(text.slice(..));
-        let pre_cursor_pos = cursor_pos.saturating_sub(1);
-        let post_cursor_pos = cursor_pos + 1;
-        let start_pos = if is_valid_path_char(&text.char(cursor_pos)) {
-            cursor_pos
-        } else if is_valid_path_char(&text.char(pre_cursor_pos)) {
-            pre_cursor_pos
-        } else {
-            post_cursor_pos
-        };
-
-        let prefix_len = text
-            .chars_at(start_pos)
-            .reversed()
-            .take_while(is_valid_path_char)
-            .count();
-
-        let postfix_len = text
-            .chars_at(start_pos)
-            .take_while(is_valid_path_char)
-            .count();
-
-        let path: String = text
-            .slice((start_pos - prefix_len)..(start_pos + postfix_len))
-            .into();
-        log::debug!("goto_file auto-detected path: {}", path);
-
-        vec![path]
+        let mut pos = primary.cursor(text.slice(..));
+        pos = text.char_to_byte(pos);
+        let search_start = text
+            .line_to_byte(text.byte_to_line(pos))
+            .max(pos.saturating_sub(1000));
+        let search_end = text
+            .line_to_byte(text.byte_to_line(pos) + 1)
+            .min(pos + 1000);
+        let search_range = text.slice(search_start..search_end);
+        // we also allow paths that are next to the cursor (can be ambigous but
+        // rarely so in practice) so that gf on quoted/braced path works (not sure about this
+        // but apparently that is how gf has worked historically in helix)
+        let path = find_paths(search_range, true)
+            .take_while(|range| search_start + range.start <= pos + 1)
+            .find(|range| pos <= search_start + range.end)
+            .map(|range| Cow::from(search_range.byte_slice(range)));
+        log::debug!("goto_file auto-detected path: {path:?}");
+        let path = path.unwrap_or_else(|| primary.fragment(text.slice(..)));
+        vec![path.into_owned()]
     } else {
         // Otherwise use each selection, trimmed.
         selections
             .fragments(text.slice(..))
-            .map(|sel| sel.trim().to_string())
+            .map(|sel| sel.trim().to_owned())
             .filter(|sel| !sel.is_empty())
             .collect()
     };
@@ -1267,7 +1309,7 @@ fn goto_file_impl(cx: &mut Context, action: Action) {
             continue;
         }
 
-        let path = expand_tilde(Cow::from(PathBuf::from(sel)));
+        let path = path::expand(&sel);
         let path = &rel_path.join(path);
         if path.is_dir() {
             let picker = ui::file_picker(path.into(), &cx.editor.config());
@@ -1362,6 +1404,22 @@ fn extend_prev_long_word_end(cx: &mut Context) {
 
 fn extend_next_long_word_end(cx: &mut Context) {
     extend_word_impl(cx, movement::move_next_long_word_end)
+}
+
+fn extend_next_sub_word_start(cx: &mut Context) {
+    extend_word_impl(cx, movement::move_next_sub_word_start)
+}
+
+fn extend_prev_sub_word_start(cx: &mut Context) {
+    extend_word_impl(cx, movement::move_prev_sub_word_start)
+}
+
+fn extend_prev_sub_word_end(cx: &mut Context) {
+    extend_word_impl(cx, movement::move_prev_sub_word_end)
+}
+
+fn extend_next_sub_word_end(cx: &mut Context) {
+    extend_word_impl(cx, movement::move_next_sub_word_end)
 }
 
 /// Separate branch to find_char designed only for `<ret>` char.
@@ -1941,6 +1999,8 @@ fn select_regex(cx: &mut Context) {
                 selection::select_on_matches(text, doc.selection(view.id), &regex)
             {
                 doc.set_selection(view.id, selection);
+            } else {
+                cx.editor.set_error("nothing selected");
             }
         },
     );
@@ -2185,14 +2245,53 @@ fn extend_search_prev(cx: &mut Context) {
 }
 
 fn search_selection(cx: &mut Context) {
+    search_selection_impl(cx, false)
+}
+
+fn search_selection_detect_word_boundaries(cx: &mut Context) {
+    search_selection_impl(cx, true)
+}
+
+fn search_selection_impl(cx: &mut Context, detect_word_boundaries: bool) {
+    fn is_at_word_start(text: RopeSlice, index: usize) -> bool {
+        let ch = text.char(index);
+        if index == 0 {
+            return char_is_word(ch);
+        }
+        let prev_ch = text.char(index - 1);
+
+        !char_is_word(prev_ch) && char_is_word(ch)
+    }
+
+    fn is_at_word_end(text: RopeSlice, index: usize) -> bool {
+        if index == 0 || index == text.len_chars() {
+            return false;
+        }
+        let ch = text.char(index);
+        let prev_ch = text.char(index - 1);
+
+        char_is_word(prev_ch) && !char_is_word(ch)
+    }
+
     let register = cx.register.unwrap_or('/');
     let (view, doc) = current!(cx.editor);
-    let contents = doc.text().slice(..);
+    let text = doc.text().slice(..);
 
     let regex = doc
         .selection(view.id)
         .iter()
-        .map(|selection| regex::escape(&selection.fragment(contents)))
+        .map(|selection| {
+            let add_boundary_prefix =
+                detect_word_boundaries && is_at_word_start(text, selection.from());
+            let add_boundary_suffix =
+                detect_word_boundaries && is_at_word_end(text, selection.to());
+
+            let prefix = if add_boundary_prefix { "\\b" } else { "" };
+            let suffix = if add_boundary_suffix { "\\b" } else { "" };
+
+            let word = regex::escape(&selection.fragment(text));
+            format!("{}{}{}", prefix, word, suffix)
+        })
         .collect::<HashSet<_>>() // Collect into hashset to deduplicate identical regexes
         .into_iter()
         .collect::<Vec<_>>()
@@ -2655,7 +2754,9 @@ fn delete_selection_impl(cx: &mut Context, op: Operation, yank: YankAction) {
         // yank the selection
         let text = doc.text().slice(..);
         let values: Vec<String> = selection.fragments(text).map(Cow::into_owned).collect();
-        let reg_name = cx.register.unwrap_or('"');
+        let reg_name = cx
+            .register
+            .unwrap_or_else(|| cx.editor.config.load().default_yank_register);
         if let Err(err) = cx.editor.registers.write(reg_name, values) {
             cx.editor.set_error(err.to_string());
             return;
@@ -3188,6 +3289,9 @@ pub fn command_palette(cx: &mut Context) {
                 ui::PickerColumn::new("name", |item, _| match item {
                     MappableCommand::Typable { name, .. } => format!(":{name}").into(),
                     MappableCommand::Static { name, .. } => (*name).into(),
+                    MappableCommand::Macro { .. } => {
+                        unreachable!("macros aren't included in the command palette")
+                    }
                 }),
                 ui::PickerColumn::new(
                     "bindings",
@@ -3427,31 +3531,51 @@ fn open(cx: &mut Context, open: Open) {
             )
         };
 
-        let indent = indent::indent_for_newline(
-            doc.language_config(),
-            doc.syntax(),
-            &doc.config.load().indent_heuristic,
-            &doc.indent_style,
-            doc.tab_width(),
-            text,
-            line_num,
-            line_end_index,
-            cursor_line,
-        );
+        let continue_comment_token = doc
+            .language_config()
+            .and_then(|config| config.comment_tokens.as_ref())
+            .and_then(|tokens| comment::get_comment_token(text, tokens, cursor_line));
+
+        let line = text.line(cursor_line);
+        let indent = match line.first_non_whitespace_char() {
+            Some(pos) if continue_comment_token.is_some() => line.slice(..pos).to_string(),
+            _ => indent::indent_for_newline(
+                doc.language_config(),
+                doc.syntax(),
+                &doc.config.load().indent_heuristic,
+                &doc.indent_style,
+                doc.tab_width(),
+                text,
+                line_num,
+                line_end_index,
+                cursor_line,
+            ),
+        };
 
         let indent_len = indent.len();
         let mut text = String::with_capacity(1 + indent_len);
         text.push_str(doc.line_ending.as_str());
         text.push_str(&indent);
+
+        if let Some(token) = continue_comment_token {
+            text.push_str(token);
+            text.push(' ');
+        }
+
         let text = text.repeat(count);
 
         // calculate new selection ranges
         let pos = offs + line_end_index + line_end_offset_width;
+        let comment_len = continue_comment_token
+            .map(|token| token.len() + 1) // `+ 1` for the extra space added
+            .unwrap_or_default();
         for i in 0..count {
             // pos                    -> beginning of reference line,
-            // + (i * (1+indent_len)) -> beginning of i'th line from pos
-            // + indent_len ->        -> indent for i'th line
-            ranges.push(Range::point(pos + (i * (1 + indent_len)) + indent_len));
+            // + (i * (1+indent_len + comment_len)) -> beginning of i'th line from pos (possibly including comment token)
+            // + indent_len + comment_len ->        -> indent for i'th line
+            ranges.push(Range::point(
+                pos + (i * (1 + indent_len + comment_len)) + indent_len + comment_len,
+            ));
         }
 
         offs += text.chars().count();
@@ -3882,33 +4006,35 @@ pub mod insert {
             let curr = contents.get_char(pos).unwrap_or(' ');
 
             let current_line = text.char_to_line(pos);
-            let line_is_only_whitespace = text
-                .line(current_line)
-                .chars()
-                .all(|char| char.is_ascii_whitespace());
+            let line_start = text.line_to_char(current_line);
 
             let mut new_text = String::new();
 
-            // If the current line is all whitespace, insert a line ending at the beginning of
-            // the current line. This makes the current line empty and the new line contain the
-            // indentation of the old line.
-            let (from, to, local_offs) = if line_is_only_whitespace {
-                let line_start = text.line_to_char(current_line);
-                new_text.push_str(doc.line_ending.as_str());
+            let continue_comment_token = doc
+                .language_config()
+                .and_then(|config| config.comment_tokens.as_ref())
+                .and_then(|tokens| comment::get_comment_token(text, tokens, current_line));
 
-                (line_start, line_start, new_text.chars().count())
-            } else {
-                let indent = indent::indent_for_newline(
-                    doc.language_config(),
-                    doc.syntax(),
-                    &doc.config.load().indent_heuristic,
-                    &doc.indent_style,
-                    doc.tab_width(),
-                    text,
-                    current_line,
-                    pos,
-                    current_line,
-                );
+            let (from, to, local_offs) = if let Some(idx) =
+                text.slice(line_start..pos).last_non_whitespace_char()
+            {
+                let first_trailing_whitespace_char = (line_start + idx + 1).min(pos);
+                let line = text.line(current_line);
+
+                let indent = match line.first_non_whitespace_char() {
+                    Some(pos) if continue_comment_token.is_some() => line.slice(..pos).to_string(),
+                    _ => indent::indent_for_newline(
+                        doc.language_config(),
+                        doc.syntax(),
+                        &doc.config.load().indent_heuristic,
+                        &doc.indent_style,
+                        doc.tab_width(),
+                        text,
+                        current_line,
+                        pos,
+                        current_line,
+                    ),
+                };
 
                 // If we are between pairs (such as brackets), we want to
                 // insert an additional line which is indented one level
@@ -3918,36 +4044,61 @@ pub mod insert {
                     .and_then(|pairs| pairs.get(prev))
                     .map_or(false, |pair| pair.open == prev && pair.close == curr);
 
-                let local_offs = if on_auto_pair {
+                let local_offs = if let Some(token) = continue_comment_token {
+                    new_text.push_str(doc.line_ending.as_str());
+                    new_text.push_str(&indent);
+                    new_text.push_str(token);
+                    new_text.push(' ');
+                    new_text.chars().count()
+                } else if on_auto_pair {
+                    // line where the cursor will be
                     let inner_indent = indent.clone() + doc.indent_style.as_str();
                     new_text.reserve_exact(2 + indent.len() + inner_indent.len());
                     new_text.push_str(doc.line_ending.as_str());
                     new_text.push_str(&inner_indent);
+
+                    // line where the matching pair will be
                     let local_offs = new_text.chars().count();
                     new_text.push_str(doc.line_ending.as_str());
                     new_text.push_str(&indent);
+
                     local_offs
                 } else {
                     new_text.reserve_exact(1 + indent.len());
                     new_text.push_str(doc.line_ending.as_str());
                     new_text.push_str(&indent);
+
                     new_text.chars().count()
                 };
 
-                (pos, pos, local_offs)
+                (
+                    first_trailing_whitespace_char,
+                    pos,
+                    // Note that `first_trailing_whitespace_char` is at least `pos` so the
+                    // unsigned subtraction (`pos - first_trailing_whitespace_char`) cannot
+                    // underflow.
+                    local_offs as isize - (pos - first_trailing_whitespace_char) as isize,
+                )
+            } else {
+                // If the current line is all whitespace, insert a line ending at the beginning of
+                // the current line. This makes the current line empty and the new line contain the
+                // indentation of the old line.
+                new_text.push_str(doc.line_ending.as_str());
+
+                (line_start, line_start, new_text.chars().count() as isize)
             };
 
             let new_range = if range.cursor(text) > range.anchor {
                 // when appending, extend the range by local_offs
                 Range::new(
                     range.anchor + global_offs,
-                    range.head + local_offs + global_offs,
+                    (range.head as isize + local_offs) as usize + global_offs,
                 )
             } else {
                 // when inserting, slide the range by local_offs
                 Range::new(
-                    range.anchor + local_offs + global_offs,
-                    range.head + local_offs + global_offs,
+                    (range.anchor as isize + local_offs) as usize + global_offs,
+                    (range.head as isize + local_offs) as usize + global_offs,
                 )
             };
 
@@ -4140,7 +4291,11 @@ fn commit_undo_checkpoint(cx: &mut Context) {
 // Yank / Paste
 
 fn yank(cx: &mut Context) {
-    yank_impl(cx.editor, cx.register.unwrap_or('"'));
+    yank_impl(
+        cx.editor,
+        cx.register
+            .unwrap_or(cx.editor.config().default_yank_register),
+    );
     exit_select_mode(cx);
 }
 
@@ -4201,7 +4356,12 @@ fn yank_joined_impl(editor: &mut Editor, separator: &str, register: char) {
 
 fn yank_joined(cx: &mut Context) {
     let separator = doc!(cx.editor).line_ending.as_str();
-    yank_joined_impl(cx.editor, separator, cx.register.unwrap_or('"'));
+    yank_joined_impl(
+        cx.editor,
+        separator,
+        cx.register
+            .unwrap_or(cx.editor.config().default_yank_register),
+    );
     exit_select_mode(cx);
 }
 
@@ -4256,6 +4416,10 @@ fn paste_impl(
 ) {
     if values.is_empty() {
         return;
+    }
+
+    if mode == Mode::Insert {
+        doc.append_changes_to_history(view);
     }
 
     let repeat = std::iter::repeat(
@@ -4357,7 +4521,12 @@ fn paste_primary_clipboard_before(cx: &mut Context) {
 }
 
 fn replace_with_yanked(cx: &mut Context) {
-    replace_with_yanked_impl(cx.editor, cx.register.unwrap_or('"'), cx.count());
+    replace_with_yanked_impl(
+        cx.editor,
+        cx.register
+            .unwrap_or(cx.editor.config().default_yank_register),
+        cx.count(),
+    );
     exit_select_mode(cx);
 }
 
@@ -4420,7 +4589,8 @@ fn paste(editor: &mut Editor, register: char, pos: Paste, count: usize) {
 fn paste_after(cx: &mut Context) {
     paste(
         cx.editor,
-        cx.register.unwrap_or('"'),
+        cx.register
+            .unwrap_or(cx.editor.config().default_yank_register),
         Paste::After,
         cx.count(),
     );
@@ -4430,7 +4600,8 @@ fn paste_after(cx: &mut Context) {
 fn paste_before(cx: &mut Context) {
     paste(
         cx.editor,
-        cx.register.unwrap_or('"'),
+        cx.register
+            .unwrap_or(cx.editor.config().default_yank_register),
         Paste::Before,
         cx.count(),
     );
@@ -4586,6 +4757,14 @@ fn join_selections_impl(cx: &mut Context, select_space: bool) {
     let text = doc.text();
     let slice = text.slice(..);
 
+    let comment_tokens = doc
+        .language_config()
+        .and_then(|config| config.comment_tokens.as_deref())
+        .unwrap_or(&[]);
+    // Sort by length to handle Rust's /// vs //
+    let mut comment_tokens: Vec<&str> = comment_tokens.iter().map(|x| x.as_str()).collect();
+    comment_tokens.sort_unstable_by_key(|x| std::cmp::Reverse(x.len()));
+
     let mut changes = Vec::new();
 
     for selection in doc.selection(view.id) {
@@ -4597,10 +4776,31 @@ fn join_selections_impl(cx: &mut Context, select_space: bool) {
 
         changes.reserve(lines.len());
 
+        let first_line_idx = slice.line_to_char(start);
+        let first_line_idx = skip_while(slice, first_line_idx, |ch| matches!(ch, ' ' | 't'))
+            .unwrap_or(first_line_idx);
+        let first_line = slice.slice(first_line_idx..);
+        let mut current_comment_token = comment_tokens
+            .iter()
+            .find(|token| first_line.starts_with(token));
+
         for line in lines {
             let start = line_end_char_index(&slice, line);
             let mut end = text.line_to_char(line + 1);
             end = skip_while(slice, end, |ch| matches!(ch, ' ' | '\t')).unwrap_or(end);
+            let slice_from_end = slice.slice(end..);
+            if let Some(token) = comment_tokens
+                .iter()
+                .find(|token| slice_from_end.starts_with(token))
+            {
+                if Some(token) == current_comment_token {
+                    end += token.chars().count();
+                    end = skip_while(slice, end, |ch| matches!(ch, ' ' | '\t')).unwrap_or(end);
+                } else {
+                    // update current token, but don't delete this one.
+                    current_comment_token = Some(token);
+                }
+            }
 
             let separator = if end == line_end_char_index(&slice, line + 1) {
                 // the joining line contains only space-characters => don't include a whitespace when joining
@@ -4669,6 +4869,8 @@ fn keep_or_remove_selections_impl(cx: &mut Context, remove: bool) {
                 selection::keep_or_remove_matches(text, doc.selection(view.id), &regex, remove)
             {
                 doc.set_selection(view.id, selection);
+            } else {
+                cx.editor.set_error("no selections remaining");
             }
         },
     )
@@ -5096,6 +5298,8 @@ fn jump_forward(cx: &mut Context) {
         }
 
         doc.set_selection(view.id, selection);
+        // Document we switch to might not have been opened in the view before
+        doc.ensure_view_init(view.id);
         view.ensure_cursor_in_view_center(doc, config.scrolloff);
     };
 }
@@ -5116,6 +5320,8 @@ fn jump_backward(cx: &mut Context) {
         }
 
         doc.set_selection(view.id, selection);
+        // Document we switch to might not have been opened in the view before
+        doc.ensure_view_init(view.id);
         view.ensure_cursor_in_view_center(doc, config.scrolloff);
     };
 }
@@ -5249,7 +5455,8 @@ fn insert_register(cx: &mut Context) {
             cx.register = Some(ch);
             paste(
                 cx.editor,
-                cx.register.unwrap_or('"'),
+                cx.register
+                    .unwrap_or(cx.editor.config().default_yank_register),
                 Paste::Cursor,
                 cx.count(),
             );
@@ -5761,27 +5968,24 @@ async fn shell_impl_async(
         process.wait_with_output().await?
     };
 
-    if !output.status.success() {
-        if !output.stderr.is_empty() {
-            let err = String::from_utf8_lossy(&output.stderr).to_string();
-            log::error!("Shell error: {}", err);
-            bail!("Shell error: {}", err);
+    let output = if !output.status.success() {
+        if output.stderr.is_empty() {
+            match output.status.code() {
+                Some(exit_code) => bail!("Shell command failed: status {}", exit_code),
+                None => bail!("Shell command failed"),
+            }
         }
-        match output.status.code() {
-            Some(exit_code) => bail!("Shell command failed: status {}", exit_code),
-            None => bail!("Shell command failed"),
-        }
+        String::from_utf8_lossy(&output.stderr)
+        // Prioritize `stderr` output over `stdout`
     } else if !output.stderr.is_empty() {
-        log::debug!(
-            "Command printed to stderr: {}",
-            String::from_utf8_lossy(&output.stderr).to_string()
-        );
-    }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::debug!("Command printed to stderr: {stderr}");
+        stderr
+    } else {
+        String::from_utf8_lossy(&output.stdout)
+    };
 
-    let str = std::str::from_utf8(&output.stdout)
-        .map_err(|_| anyhow!("Process did not output valid UTF-8"))?;
-    let tendril = Tendril::from(str);
-    Ok(tendril)
+    Ok(Tendril::from(output))
 }
 
 fn shell(cx: &mut compositor::Context, cmd: &str, behavior: &ShellBehavior) {

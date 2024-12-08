@@ -35,7 +35,9 @@ use log::{debug, error, info, warn};
 use std::io::stdout;
 use std::{collections::btree_map::Entry, io::stdin, path::Path, sync::Arc};
 
-use anyhow::{Context, Error};
+#[cfg(not(windows))]
+use anyhow::Context;
+use anyhow::Error;
 
 use crossterm::{event::Event as CrosstermEvent, tty::IsTty};
 #[cfg(not(windows))]
@@ -844,7 +846,15 @@ impl Application {
                         }
                     }
                     Notification::ShowMessage(params) => {
-                        log::warn!("unhandled window/showMessage: {:?}", params);
+                        if self.config.load().editor.lsp.display_messages {
+                            match params.typ {
+                                lsp::MessageType::ERROR => self.editor.set_error(params.message),
+                                lsp::MessageType::WARNING => {
+                                    self.editor.set_warning(params.message)
+                                }
+                                _ => self.editor.set_status(params.message),
+                            }
+                        }
                     }
                     Notification::LogMessage(params) => {
                         log::info!("window/logMessage: {:?}", params);
@@ -928,7 +938,7 @@ impl Application {
                             self.lsp_progress.update(server_id, token, work);
                         }
 
-                        if self.config.load().editor.lsp.display_messages {
+                        if self.config.load().editor.lsp.display_progress_messages {
                             self.editor.set_status(status);
                         }
                     }

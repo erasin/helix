@@ -19,7 +19,7 @@ mod tree;
 use crate::compositor::Compositor;
 use crate::filter_picker_entry;
 use crate::job::{self, Callback};
-pub use completion::{Completion, CompletionItem};
+pub use completion::Completion;
 pub use editor::EditorView;
 use helix_stdx::rope;
 pub use explorer::Explorer;

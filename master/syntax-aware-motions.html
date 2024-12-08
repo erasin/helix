@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Migrating from Vim</title>
+        <title>Syntax aware motions</title>
 
 
         <!-- Custom HTML head -->
@@ -131,7 +131,7 @@
                         <a href="https://github.com/helix-editor/helix" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/helix-editor/helix/edit/master/book/src/from-vim.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/helix-editor/helix/edit/master/book/src/syntax-aware-motions.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -160,27 +160,64 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="migrating-from-vim"><a class="header" href="#migrating-from-vim">Migrating from Vim</a></h1>
-<p>Helix's editing model is strongly inspired from Vim and Kakoune, and a notable
-difference from Vim (and the most striking similarity to Kakoune) is that Helix
-follows the <code>selection → action</code> model. This means that whatever you are
-going to act on (a word, a paragraph, a line, etc.) is selected first and the
-action itself (delete, change, yank, etc.) comes second. A cursor is simply a
-single width selection.</p>
-<p>See also Kakoune's <a href="https://github.com/mawww/kakoune/wiki/Migrating-from-Vim">Migrating from Vim</a> and Helix's <a href="https://github.com/helix-editor/helix/wiki/Migrating-from-Vim">Migrating from Vim</a>.</p>
-<blockquote>
-<p>TODO: Mention textobjects, surround, registers</p>
-</blockquote>
+                        <h2 id="moving-the-selection-with-syntax-aware-motions"><a class="header" href="#moving-the-selection-with-syntax-aware-motions">Moving the selection with syntax-aware motions</a></h2>
+<p><code>Alt-p</code>, <code>Alt-o</code>, <code>Alt-i</code>, and <code>Alt-n</code> (or <code>Alt</code> and arrow keys) allow you to move the
+selection according to its location in the syntax tree. For example, many languages have the
+following syntax for function calls:</p>
+<pre><code class="language-js">func(arg1, arg2, arg3);
+</code></pre>
+<p>A function call might be parsed by tree-sitter into a tree like the following.</p>
+<pre><code class="language-tsq">(call
+  function: (identifier) ; func
+  arguments:
+    (arguments           ; (arg1, arg2, arg3)
+      (identifier)       ; arg1
+      (identifier)       ; arg2
+      (identifier)))     ; arg3
+</code></pre>
+<p>Use <code>:tree-sitter-subtree</code> to view the syntax tree of the primary selection. In
+a more intuitive tree format:</p>
+<pre><code>            ┌────┐
+            │call│
+      ┌─────┴────┴─────┐
+      │                │
+┌─────▼────┐      ┌────▼────┐
+│identifier│      │arguments│
+│  "func"  │ ┌────┴───┬─────┴───┐
+└──────────┘ │        │         │
+             │        │         │
+   ┌─────────▼┐  ┌────▼─────┐  ┌▼─────────┐
+   │identifier│  │identifier│  │identifier│
+   │  "arg1"  │  │  "arg2"  │  │  "arg3"  │
+   └──────────┘  └──────────┘  └──────────┘
+</code></pre>
+<p>If you have a selection that wraps <code>arg1</code> (see the tree above), and you use
+<code>Alt-n</code>, it will select the next sibling in the syntax tree: <code>arg2</code>.</p>
+<pre><code class="language-js">// before
+func([arg1], arg2, arg3)
+// after
+func(arg1, [arg2], arg3);
+</code></pre>
+<p>Similarly, <code>Alt-o</code> will expand the selection to the parent node, in this case, the
+arguments node.</p>
+<pre><code class="language-js">func[(arg1, arg2, arg3)];
+</code></pre>
+<p>There is also some nuanced behavior that prevents you from getting stuck on a
+node with no sibling. When using <code>Alt-p</code> with a selection on <code>arg1</code>, the previous
+child node will be selected. In the event that <code>arg1</code> does not have a previous
+sibling, the selection will move up the syntax tree and select the previous
+element. As a result, using <code>Alt-p</code> with a selection on <code>arg1</code> will move the
+selection to the "func" <code>identifier</code>.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="lang-support.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="textobjects.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="configuration.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="pickers.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -190,11 +227,11 @@ single width selection.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="lang-support.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="textobjects.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="configuration.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="pickers.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

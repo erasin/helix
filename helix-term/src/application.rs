@@ -1,6 +1,6 @@
 use arc_swap::{access::Map, ArcSwap};
 use futures_util::Stream;
-use helix_core::{diagnostic::Severity, pos_at_coords, syntax, Selection};
+use helix_core::{diagnostic::Severity, pos_at_coords, syntax, Range, Selection};
 use helix_lsp::{
     lsp::{self, notification::Notification},
     util::lsp_range_to_range,
@@ -11,7 +11,6 @@ use helix_view::{
     align_view,
     document::{DocumentOpenError, DocumentSavedEventResult},
     editor::{ConfigEvent, EditorEvent},
-    events::DiagnosticsDidChange,
     graphics::Rect,
     theme,
     tree::Layout,
@@ -33,9 +32,11 @@ use crate::{
 use log::{debug, error, info, warn};
 #[cfg(not(feature = "integration"))]
 use std::io::stdout;
-use std::{collections::btree_map::Entry, io::stdin, path::Path, sync::Arc};
+use std::{io::stdin, path::Path, sync::Arc};
 
-use anyhow::{Context, Error};
+#[cfg(not(windows))]
+use anyhow::Context;
+use anyhow::Error;
 
 use crossterm::{event::Event as CrosstermEvent, tty::IsTty};
 #[cfg(not(windows))]
@@ -173,7 +174,7 @@ impl Application {
                     nr_of_files += 1;
                     if file.is_dir() {
                         return Err(anyhow::anyhow!(
-                            "expected a path to file, found a directory. (to open a directory pass it as first argument)"
+                            "expected a path to file, but found a directory: {file:?}. (to open a directory pass it as first argument)"
                         ));
                     } else {
                         // If the user passes in either `--vsplit` or
@@ -187,6 +188,7 @@ impl Application {
                             Some(Layout::Horizontal) => Action::HorizontalSplit,
                             None => Action::Load,
                         };
+                        let old_id = editor.document_id_by_path(&file);
                         let doc_id = match editor.open(&file, action) {
                             // Ignore irregular files during application init.
                             Err(DocumentOpenError::IrregularFile) => {
@@ -194,6 +196,11 @@ impl Application {
                                 continue;
                             }
                             Err(err) => return Err(anyhow::anyhow!(err)),
+                            // We can't open more than 1 buffer for 1 file, in this case we already have opened this file previously
+                            Ok(doc_id) if old_id == Some(doc_id) => {
+                                nr_of_files -= 1;
+                                doc_id
+                            }
                             Ok(doc_id) => doc_id,
                         };
                         // with Action::Load all documents have the same view
@@ -202,8 +209,13 @@ impl Application {
                         // opened last is focused on.
                         let view_id = editor.tree.focus;
                         let doc = doc_mut!(editor, &doc_id);
-                        let pos = Selection::point(pos_at_coords(doc.text().slice(..), pos, true));
-                        doc.set_selection(view_id, pos);
+                        let selection = pos
+                            .into_iter()
+                            .map(|coords| {
+                                Range::point(pos_at_coords(doc.text().slice(..), coords, true))
+                            })
+                            .collect();
+                        doc.set_selection(view_id, selection);
                     }
                 }
 
@@ -395,9 +407,9 @@ impl Application {
 
         // reset view position in case softwrap was enabled/disabled
         let scrolloff = self.editor.config().scrolloff;
-        for (view, _) in self.editor.tree.views_mut() {
-            let doc = &self.editor.documents[&view.doc];
-            view.ensure_cursor_in_view(doc, scrolloff)
+        for (view, _) in self.editor.tree.views() {
+            let doc = doc_mut!(self.editor, &view.doc);
+            view.ensure_cursor_in_view(doc, scrolloff);
         }
     }
 
@@ -575,7 +587,7 @@ impl Application {
             doc_save_event.revision
         );
 
-        doc.set_last_saved_revision(doc_save_event.revision);
+        doc.set_last_saved_revision(doc_save_event.revision, doc_save_event.save_time);
 
         let lines = doc_save_event.text.len_lines();
         let bytes = doc_save_event.text.len_bytes();
@@ -709,7 +721,7 @@ impl Application {
                         // This might not be required by the spec but Neovim does this as well, so it's
                         // probably a good idea for compatibility.
                         if let Some(config) = language_server.config() {
-                            tokio::spawn(language_server.did_change_configuration(config.clone()));
+                            language_server.did_change_configuration(config.clone());
                         }
 
                         let docs = self
@@ -727,15 +739,15 @@ impl Application {
                             let language_id =
                                 doc.language_id().map(ToOwned::to_owned).unwrap_or_default();
 
-                            tokio::spawn(language_server.text_document_did_open(
+                            language_server.text_document_did_open(
                                 url,
                                 doc.version(),
                                 doc.text(),
                                 language_id,
-                            ));
+                            );
                         }
                     }
-                    Notification::PublishDiagnostics(mut params) => {
+                    Notification::PublishDiagnostics(params) => {
                         let uri = match helix_core::Uri::try_from(params.uri) {
                             Ok(uri) => uri,
                             Err(err) => {
@@ -748,103 +760,23 @@ impl Application {
                             log::error!("Discarding publishDiagnostic notification sent by an uninitialized server: {}", language_server.name());
                             return;
                         }
-                        // have to inline the function because of borrow checking...
-                        let doc = self.editor.documents.values_mut()
-                            .find(|doc| doc.uri().is_some_and(|u| u == uri))
-                            .filter(|doc| {
-                                if let Some(version) = params.version {
-                                    if version != doc.version() {
-                                        log::info!("Version ({version}) is out of date for {uri:?} (expected ({}), dropping PublishDiagnostic notification", doc.version());
-                                        return false;
-                                    }
-                                }
-                                true
-                            });
-
-                        let mut unchanged_diag_sources = Vec::new();
-                        if let Some(doc) = &doc {
-                            let lang_conf = doc.language.clone();
-
-                            if let Some(lang_conf) = &lang_conf {
-                                if let Some(old_diagnostics) = self.editor.diagnostics.get(&uri) {
-                                    if !lang_conf.persistent_diagnostic_sources.is_empty() {
-                                        // Sort diagnostics first by severity and then by line numbers.
-                                        // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-                                        params
-                                            .diagnostics
-                                            .sort_by_key(|d| (d.severity, d.range.start));
-                                    }
-                                    for source in &lang_conf.persistent_diagnostic_sources {
-                                        let new_diagnostics = params
-                                            .diagnostics
-                                            .iter()
-                                            .filter(|d| d.source.as_ref() == Some(source));
-                                        let old_diagnostics = old_diagnostics
-                                            .iter()
-                                            .filter(|(d, d_server)| {
-                                                *d_server == server_id
-                                                    && d.source.as_ref() == Some(source)
-                                            })
-                                            .map(|(d, _)| d);
-                                        if new_diagnostics.eq(old_diagnostics) {
-                                            unchanged_diag_sources.push(source.clone())
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        let diagnostics = params.diagnostics.into_iter().map(|d| (d, server_id));
-
-                        // Insert the original lsp::Diagnostics here because we may have no open document
-                        // for diagnosic message and so we can't calculate the exact position.
-                        // When using them later in the diagnostics picker, we calculate them on-demand.
-                        let diagnostics = match self.editor.diagnostics.entry(uri) {
-                            Entry::Occupied(o) => {
-                                let current_diagnostics = o.into_mut();
-                                // there may entries of other language servers, which is why we can't overwrite the whole entry
-                                current_diagnostics.retain(|(_, lsp_id)| *lsp_id != server_id);
-                                current_diagnostics.extend(diagnostics);
-                                current_diagnostics
-                                // Sort diagnostics first by severity and then by line numbers.
-                            }
-                            Entry::Vacant(v) => v.insert(diagnostics.collect()),
-                        };
-
-                        // Sort diagnostics first by severity and then by line numbers.
-                        // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-                        diagnostics
-                            .sort_by_key(|(d, server_id)| (d.severity, d.range.start, *server_id));
-
-                        if let Some(doc) = doc {
-                            let diagnostic_of_language_server_and_not_in_unchanged_sources =
-                                |diagnostic: &lsp::Diagnostic, ls_id| {
-                                    ls_id == server_id
-                                        && diagnostic.source.as_ref().map_or(true, |source| {
-                                            !unchanged_diag_sources.contains(source)
-                                        })
-                                };
-                            let diagnostics = Editor::doc_diagnostics_with_filter(
-                                &self.editor.language_servers,
-                                &self.editor.diagnostics,
-                                doc,
-                                diagnostic_of_language_server_and_not_in_unchanged_sources,
-                            );
-                            doc.replace_diagnostics(
-                                diagnostics,
-                                &unchanged_diag_sources,
-                                Some(server_id),
-                            );
-
-                            let doc = doc.id();
-                            helix_event::dispatch(DiagnosticsDidChange {
-                                editor: &mut self.editor,
-                                doc,
-                            });
-                        }
+                        self.editor.handle_lsp_diagnostics(
+                            language_server.id(),
+                            uri,
+                            params.version,
+                            params.diagnostics,
+                        );
                     }
                     Notification::ShowMessage(params) => {
-                        log::warn!("unhandled window/showMessage: {:?}", params);
+                        if self.config.load().editor.lsp.display_messages {
+                            match params.typ {
+                                lsp::MessageType::ERROR => self.editor.set_error(params.message),
+                                lsp::MessageType::WARNING => {
+                                    self.editor.set_warning(params.message)
+                                }
+                                _ => self.editor.set_status(params.message),
+                            }
+                        }
                     }
                     Notification::LogMessage(params) => {
                         log::info!("window/logMessage: {:?}", params);
@@ -928,7 +860,7 @@ impl Application {
                             self.lsp_progress.update(server_id, token, work);
                         }
 
-                        if self.config.load().editor.lsp.display_messages {
+                        if self.config.load().editor.lsp.display_progress_messages {
                             self.editor.set_status(status);
                         }
                     }
@@ -1110,7 +1042,13 @@ impl Application {
                     }
                 };
 
-                tokio::spawn(language_server!().reply(id, reply));
+                let language_server = language_server!();
+                if let Err(err) = language_server.reply(id.clone(), reply) {
+                    log::error!(
+                        "Failed to send reply to server '{}' request {id}: {err}",
+                        language_server.name()
+                    );
+                }
             }
             Call::Invalid { id } => log::error!("LSP invalid method call id={:?}", id),
         }

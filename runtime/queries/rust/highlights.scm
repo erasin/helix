@@ -1,9 +1,89 @@
 ; -------
-; Tree-Sitter doesn't allow overrides in regards to captures,
-; though it is possible to affect the child node of a captured
-; node. Thus, the approach here is to flip the order so that
-; overrides are unnecessary.
+; Basic identifiers
 ; -------
+
+; We do not style ? as an operator on purpose as it allows styling ? differently, as many highlighters do. @operator.special might have been a better scope, but @special is already documented so the change would break themes (including the intent of the default theme)
+"?" @special
+
+(type_identifier) @type
+(identifier) @variable
+(field_identifier) @variable.other.member
+
+; -------
+; Operators
+; -------
+
+[
+  "*"
+  "'"
+  "->"
+  "=>"
+  "<="
+  "="
+  "=="
+  "!"
+  "!="
+  "%"
+  "%="
+  "&"
+  "&="
+  "&&"
+  "|"
+  "|="
+  "||"
+  "^"
+  "^="
+  "*"
+  "*="
+  "-"
+  "-="
+  "+"
+  "+="
+  "/"
+  "/="
+  ">"
+  "<"
+  ">="
+  ">>"
+  "<<"
+  ">>="
+  "<<="
+  "@"
+  ".."
+  "..="
+  "'"
+] @operator
+
+; -------
+; Paths
+; -------
+
+(use_declaration
+  argument: (identifier) @namespace)
+(use_wildcard
+  (identifier) @namespace)
+(extern_crate_declaration
+  name: (identifier) @namespace
+  alias: (identifier)? @namespace)
+(mod_item
+  name: (identifier) @namespace)
+(scoped_use_list
+  path: (identifier)? @namespace)
+(use_list
+  (identifier) @namespace)
+(use_as_clause
+  path: (identifier)? @namespace
+  alias: (identifier) @namespace)
+
+; ---
+; Remaining Paths
+; ---
+
+(scoped_identifier
+  path: (identifier)? @namespace
+  name: (identifier) @namespace)
+(scoped_type_identifier
+  path: (identifier) @namespace)
 
 ; -------
 ; Types
@@ -15,6 +95,10 @@
   left: (type_identifier) @type.parameter)
 (optional_type_parameter
   name: (type_identifier) @type.parameter)
+((type_arguments (type_identifier) @constant)
+ (#match? @constant "^[A-Z_]+$"))
+((type_arguments (type_identifier) @comment.unused)
+ (#eq? @comment.unused "_"))
 
 ; ---
 ; Primitives
@@ -30,6 +114,8 @@
   (string_literal)
   (raw_string_literal)
 ] @string
+(outer_doc_comment_marker "/" @comment)
+(inner_doc_comment_marker "!" @comment)
 [
   (line_comment)
   (block_comment)
@@ -63,6 +149,14 @@
  (#any-of? @type.enum.variant.builtin "Some" "None" "Ok" "Err"))
 
 
+(call_expression
+  (identifier) @function.builtin
+  (#any-of? @function.builtin
+    "drop"
+    "size_of"
+    "size_of_val"
+    "align_of"
+    "align_of_val"))
 
 ((type_identifier) @type.builtin
  (#any-of?
@@ -166,8 +260,7 @@
 
 (for_expression
   "for" @keyword.control.repeat)
-((identifier) @keyword.control
-  (#match? @keyword.control "^yield$"))
+(gen_block "gen" @keyword.control)
 
 "in" @keyword.control
 
@@ -188,6 +281,7 @@
   "continue"
   "return"
   "await"
+  "yield"
 ] @keyword.control.return
 
 "use" @keyword.control.import
@@ -195,6 +289,10 @@
 (use_as_clause "as" @keyword.control.import)
 
 (type_cast_expression "as" @keyword.operator)
+
+((generic_type
+    type: (type_identifier) @keyword)
+ (#eq? @keyword "use"))
 
 [
   (crate)
@@ -233,6 +331,7 @@
 [
   "static"
   "const"
+  "raw"
   "ref"
   "move"
   "dyn"
@@ -268,8 +367,41 @@
   (#match? @constructor "^[A-Z]"))
 
 ; -------
+; Functions
+; -------
+
+(call_expression
+  function: [
+    ((identifier) @function)
+    (scoped_identifier
+      name: (identifier) @function)
+    (field_expression
+      field: (field_identifier) @function)
+  ])
+(generic_function
+  function: [
+    ((identifier) @function)
+    (scoped_identifier
+      name: (identifier) @function)
+    (field_expression
+      field: (field_identifier) @function.method)
+  ])
+
+(function_item
+  name: (identifier) @function)
+
+(function_signature_item
+  name: (identifier) @function)
+
+; -------
 ; Guess Other Types
 ; -------
+; Other PascalCase identifiers are assumed to be structs.
+
+((identifier) @type
+  (#match? @type "^[A-Z]"))
+
+(never_type "!" @type)
 
 ((identifier) @constant
  (#match? @constant "^[A-Z][A-Z\\d_]*$"))
@@ -305,40 +437,6 @@
       (#match? @constructor "^[A-Z]")))
 
 ; ---
-; Other PascalCase identifiers are assumed to be structs.
-; ---
-
-((identifier) @type
-  (#match? @type "^[A-Z]"))
-
-; -------
-; Functions
-; -------
-
-(call_expression
-  function: [
-    ((identifier) @function)
-    (scoped_identifier
-      name: (identifier) @function)
-    (field_expression
-      field: (field_identifier) @function)
-  ])
-(generic_function
-  function: [
-    ((identifier) @function)
-    (scoped_identifier
-      name: (identifier) @function)
-    (field_expression
-      field: (field_identifier) @function.method)
-  ])
-
-(function_item
-  name: (identifier) @function)
-
-(function_signature_item
-  name: (identifier) @function)
-
-; ---
 ; Macros
 ; ---
 
@@ -372,89 +470,3 @@
 
 (metavariable) @variable.parameter
 (fragment_specifier) @type
-
-; -------
-; Operators
-; -------
-
-[
-  "*"
-  "'"
-  "->"
-  "=>"
-  "<="
-  "="
-  "=="
-  "!"
-  "!="
-  "%"
-  "%="
-  "&"
-  "&="
-  "&&"
-  "|"
-  "|="
-  "||"
-  "^"
-  "^="
-  "*"
-  "*="
-  "-"
-  "-="
-  "+"
-  "+="
-  "/"
-  "/="
-  ">"
-  "<"
-  ">="
-  ">>"
-  "<<"
-  ">>="
-  "<<="
-  "@"
-  ".."
-  "..="
-  "'"
-] @operator
-
-; -------
-; Paths
-; -------
-
-(use_declaration
-  argument: (identifier) @namespace)
-(use_wildcard
-  (identifier) @namespace)
-(extern_crate_declaration
-  name: (identifier) @namespace
-  alias: (identifier)? @namespace)
-(mod_item
-  name: (identifier) @namespace)
-(scoped_use_list
-  path: (identifier)? @namespace)
-(use_list
-  (identifier) @namespace)
-(use_as_clause
-  path: (identifier)? @namespace
-  alias: (identifier) @namespace)
-
-; ---
-; Remaining Paths
-; ---
-
-(scoped_identifier
-  path: (identifier)? @namespace
-  name: (identifier) @namespace)
-(scoped_type_identifier
-  path: (identifier) @namespace)
-
-; -------
-; Remaining Identifiers
-; -------
-
-"?" @special
-
-(type_identifier) @type
-(identifier) @variable
-(field_identifier) @variable.other.member

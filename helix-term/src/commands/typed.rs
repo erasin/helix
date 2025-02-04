@@ -1665,27 +1665,26 @@ fn debug_remote(
     )
 }
 
-fn tutor(cx: &mut compositor::Context, args: Args, event: PromptEvent) -> anyhow::Result<()> {
+fn tutor(cx: &mut compositor::Context, mut args: Args, event: PromptEvent) -> anyhow::Result<()> {
     if event != PromptEvent::Validate {
         return Ok(());
     }
 
     let default_tutor = helix_loader::runtime_file(Path::new("tutor"));
 
-    let path = match args.is_empty() {
-        true => None,
-        false => {
-            let name = args.raw().to_lowercase();
-            if name.eq("default") {
-                None
-            } else {
-                let mut ps = helix_loader::runtime_dirs().to_vec();
-                ps.insert(0, helix_loader::config_dir());
-                ps.into_iter()
-                    .map(|x| x.join("tutors").join(&name))
-                    .find(|x| x.exists())
-            }
+    let path = if let Some(name) = args.next() {
+        let name = name.to_lowercase();
+        if name.eq("default") {
+            None
+        } else {
+            let mut ps = helix_loader::runtime_dirs().to_vec();
+            ps.insert(0, helix_loader::config_dir());
+            ps.into_iter()
+                .map(|x| x.join("tutors").join(&name))
+                .find(|x| x.exists())
         }
+    } else {
+        None
     };
 
     cx.editor

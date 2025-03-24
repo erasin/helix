@@ -122,6 +122,9 @@ impl Prompt {
         self.recalculate_completion(editor);
     }
 
+    pub fn prompt(&self) -> &str {
+        self.prompt.as_ref()
+    }
     pub fn with_language(
         mut self,
         language: &'static str,

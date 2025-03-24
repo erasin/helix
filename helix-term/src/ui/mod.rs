@@ -1,6 +1,7 @@
 mod completion;
 mod document;
 pub(crate) mod editor;
+mod explorer;
 mod info;
 pub mod lsp;
 mod markdown;
@@ -13,6 +14,7 @@ mod spinner;
 mod statusline;
 mod text;
 mod text_decorations;
+mod tree;
 
 use crate::compositor::Compositor;
 use crate::filter_picker_entry;
@@ -21,6 +23,7 @@ pub use completion::Completion;
 pub use editor::EditorView;
 use helix_stdx::rope;
 use helix_view::theme::Style;
+pub use explorer::Explorer;
 pub use markdown::Markdown;
 pub use menu::Menu;
 pub use picker::{Column as PickerColumn, FileLocation, Picker};
@@ -28,6 +31,7 @@ pub use popup::Popup;
 pub use prompt::{Prompt, PromptEvent};
 pub use spinner::{ProgressSpinners, Spinner};
 pub use text::Text;
+pub use tree::{TreeOp, TreeView, TreeViewItem};
 
 use helix_view::Editor;
 use tui::text::{Span, Spans};

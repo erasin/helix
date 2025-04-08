@@ -100,7 +100,7 @@
 | `file_picker` | Open file picker | normal: `` <space>f ``, select: `` <space>f `` |
 | `file_picker_in_current_buffer_directory` | Open file picker at current buffer's directory |  |
 | `file_picker_in_current_directory` | Open file picker at current working directory | normal: `` <space>F ``, select: `` <space>F `` |
-| `file_explorer` | Open file explorer in workspace root | normal: `` <space>e ``, select: `` <space>e `` |
+| `file_explorer` | Open file explorer in workspace root |  |
 | `file_explorer_in_current_buffer_directory` | Open file explorer at current buffer's directory | normal: `` <space>E ``, select: `` <space>E `` |
 | `file_explorer_in_current_directory` | Open file explorer at current working directory |  |
 | `code_action` | Perform code action | normal: `` <space>a ``, select: `` <space>a `` |
@@ -126,8 +126,10 @@
 | `add_newline_below` | Add newline below | normal: `` ]<space> ``, select: `` ]<space> `` |
 | `goto_type_definition` | Goto type definition | normal: `` gy ``, select: `` gy `` |
 | `goto_implementation` | Goto implementation | normal: `` gi ``, select: `` gi `` |
-| `goto_file_start` | Goto line number <n> else file start | normal: `` gg ``, select: `` gg `` |
+| `goto_file_start` | Goto line number <n> else file start | normal: `` gg `` |
 | `goto_file_end` | Goto file end |  |
+| `extend_to_file_start` | Extend to line number<n> else file start | select: `` gg `` |
+| `extend_to_file_end` | Extend to file end |  |
 | `goto_file` | Goto files/URLs in selections | normal: `` gf ``, select: `` gf `` |
 | `goto_file_hsplit` | Goto files in selections (hsplit) | normal: `` <C-w>f ``, `` <space>wf ``, select: `` <C-w>f ``, `` <space>wf `` |
 | `goto_file_vsplit` | Goto files in selections (vsplit) | normal: `` <C-w>F ``, `` <space>wF ``, select: `` <C-w>F ``, `` <space>wF `` |
@@ -139,7 +141,8 @@
 | `goto_last_modified_file` | Goto last modified file | normal: `` gm ``, select: `` gm `` |
 | `goto_last_modification` | Goto last modification | normal: `` g. ``, select: `` g. `` |
 | `goto_line` | Goto line | normal: `` G ``, select: `` G `` |
-| `goto_last_line` | Goto last line | normal: `` ge ``, select: `` ge `` |
+| `goto_last_line` | Goto last line | normal: `` ge `` |
+| `extend_to_last_line` | Extend to last line | select: `` ge `` |
 | `goto_first_diag` | Goto first diagnostic | normal: `` [D ``, select: `` [D `` |
 | `goto_last_diag` | Goto last diagnostic | normal: `` ]D ``, select: `` ]D `` |
 | `goto_next_diag` | Goto next diagnostic | normal: `` ]d ``, select: `` ]d `` |
@@ -302,3 +305,5 @@
 | `syntax_workspace_symbol_picker` | Open a picker of symbols for the workspace based on syntax trees |  |
 | `lsp_or_syntax_symbol_picker` | Open an LSP symbol picker if available, or syntax otherwise | normal: `` <space>s ``, select: `` <space>s `` |
 | `lsp_or_syntax_workspace_symbol_picker` | Open a workspace LSP symbol picker if available, or syntax workspace symbol picker otherwise | normal: `` <space>S ``, select: `` <space>S `` |
+| `open_or_focus_explorer` | Open or focus explorer |  |
+| `reveal_current_file` | Reveal current file in explorer | normal: `` <space>e ``, select: `` <space>e `` |

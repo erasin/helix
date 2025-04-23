@@ -58,6 +58,7 @@
 | erb | ✓ |  |  |  |  |
 | erlang | ✓ | ✓ |  | ✓ | `erlang_ls`, `elp` |
 | esdl | ✓ |  |  |  |  |
+| fennel | ✓ |  |  | `fennel-ls` |
 | fga | ✓ | ✓ | ✓ |  |  |
 | fidl | ✓ |  |  |  |  |
 | fish | ✓ | ✓ | ✓ |  | `fish-lsp` |
@@ -182,6 +183,7 @@
 | purescript | ✓ | ✓ |  |  | `purescript-language-server` |
 | python | ✓ | ✓ | ✓ | ✓ | `ruff`, `jedi-language-server`, `pylsp` |
 | qml | ✓ |  | ✓ |  | `qmlls` |
+| quarto | ✓ |  | ✓ |  |
 | quint | ✓ |  |  |  | `quint-language-server` |
 | r | ✓ |  |  |  | `R` |
 | racket | ✓ |  | ✓ |  | `racket` |

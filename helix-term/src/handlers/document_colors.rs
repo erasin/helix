@@ -125,7 +125,7 @@ fn attach_document_colors(
 
     for (pos, color) in doc_colors {
         color_swatches_padding.push(InlineAnnotation::new(pos, " "));
-        color_swatches.push(InlineAnnotation::new(pos, icons.lsp().color()));
+        color_swatches.push(InlineAnnotation::new(pos, icons.kind().color().glyph()));
         colors.push(Theme::rgb_highlight(
             (color.red * 255.) as u8,
             (color.green * 255.) as u8,

@@ -650,19 +650,17 @@ impl EditorView {
                 bufferline_inactive
             };
 
-            let lang = doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
-
             let icons = ICONS.load();
-            let icon = icons.mime().get(lang);
 
-            let text = if lang == icon {
-                format!(" {} {}", fname, if doc.is_modified() { "[+] " } else { "" })
-            } else {
+            let text = if let Some(icon) = icons.mime().get(doc.path(), doc.language_name()) {
                 format!(
-                    " {icon} {} {}",
+                    " {}  {} {}",
+                    icon.glyph(),
                     fname,
                     if doc.is_modified() { "[+] " } else { "" }
                 )
+            } else {
+                format!(" {} {}", fname, if doc.is_modified() { "[+] " } else { "" })
             };
 
             let used_width = viewport.x.saturating_sub(x);

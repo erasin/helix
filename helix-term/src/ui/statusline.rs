@@ -245,13 +245,12 @@ where
             });
 
     let icons = ICONS.load();
-
     for sev in &context.editor.config().statusline.diagnostics {
         match sev {
             Severity::Hint if hints > 0 => {
                 write(
                     context,
-                    "●".to_string(),
+                    icons.diagnostic().hint().to_string(),
                     Some(context.editor.theme.get("hint")),
                 );
                 write(context, format!(" {} ", hints), None);
@@ -259,7 +258,7 @@ where
             Severity::Info if info > 0 => {
                 write(
                     context,
-                    "●".to_string(),
+                    icons.diagnostic().info().to_string(),
                     Some(context.editor.theme.get("info")),
                 );
                 write(context, format!(" {} ", info), None);
@@ -304,8 +303,16 @@ where
         },
     );
 
+    let icons = ICONS.load();
     if hints > 0 || info > 0 || warnings > 0 || errors > 0 {
-        write(context, " W ".into(), None);
+        let icon = icons.kind().workspace();
+        if !icon.glyph().is_empty() {
+            write(
+                context,
+                format!("{} ", icon.glyph()),
+                icon.color().map(|color| Style::default().fg(color)),
+            );
+        }
     }
 
     let icons = ICONS.load();
@@ -315,7 +322,7 @@ where
             Severity::Hint if hints > 0 => {
                 write(
                     context,
-                    "●".to_string(),
+                    icons.diagnostic().hint().to_string(),
                     Some(context.editor.theme.get("hint")),
                 );
                 write(context, format!(" {} ", hints), None);
@@ -323,7 +330,7 @@ where
             Severity::Info if info > 0 => {
                 write(
                     context,
-                    "●".to_string(),
+                    icons.diagnostic().info().to_string(),
                     Some(context.editor.theme.get("info")),
                 );
                 write(context, format!(" {} ", info), None);
@@ -472,11 +479,29 @@ where
 {
     let icons = ICONS.load();
 
-    let icon = icons
+    if let Some(icon) = icons
         .mime()
-        .get(context.doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME));
-
-    write(context, format!(" {} ", icon), None);
+        .get(context.doc.path(), context.doc.language_name())
+    {
+        if let Some(color) = icon.color() {
+            write(
+                context,
+                format!(" {} ", icon.glyph()),
+                Some(Style::default().fg(color)),
+            );
+        } else {
+            write(context, format!(" {} ", icon.glyph()), None);
+        }
+    } else {
+        write(
+            context,
+            format!(
+                " {} ",
+                context.doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME)
+            ),
+            None,
+        );
+    }
 }
 
 fn render_file_name<F>(context: &mut RenderContext, write: F)
@@ -580,13 +605,12 @@ where
 {
     let head = context.doc.version_control_head().unwrap_or_default();
 
-    let icons = ICONS.load();
-    let icon = icons.vcs().icon();
-
     let vcs = if head.is_empty() {
-        format!("{head}")
+        format!(" {head} ")
     } else {
-        format!("{icon} {head}")
+        let icons = ICONS.load();
+        let icon = icons.vcs().branch();
+        format!(" {icon} {head} ")
     };
 
     write(context, vcs, None);

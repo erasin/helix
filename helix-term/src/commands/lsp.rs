@@ -183,7 +183,7 @@ fn display_symbol_kind(kind: lsp::SymbolKind) -> &'static str {
         lsp::SymbolKind::OBJECT => "object",
         lsp::SymbolKind::KEY => "key",
         lsp::SymbolKind::NULL => "null",
-        lsp::SymbolKind::ENUM_MEMBER => "enummem",
+        lsp::SymbolKind::ENUM_MEMBER => "enum_member",
         lsp::SymbolKind::STRUCT => "struct",
         lsp::SymbolKind::EVENT => "event",
         lsp::SymbolKind::OPERATOR => "operator",
@@ -411,10 +411,20 @@ pub fn symbol_picker(cx: &mut Context) {
                 ui::PickerColumn::new("kind", |item: &SymbolInformationItem, _| {
                     let icons = ICONS.load();
                     let name = display_symbol_kind(item.symbol.kind);
-                    icons
-                        .lsp()
-                        .get(name)
-                        .map_or_else(|| name.into(), |symbol| format!("{symbol}  {name}").into())
+
+                    if let Some(icon) = icons.kind().get(name) {
+                        if let Some(color) = icon.color() {
+                            Span::styled(
+                                format!("{}  {name}", icon.glyph()),
+                                Style::default().fg(color),
+                            )
+                            .into()
+                        } else {
+                            format!("{}  {name}", icon.glyph()).into()
+                        }
+                    } else {
+                        name.into()
+                    }
                 }),
                 // Some symbols in the document symbol picker may have a URI that isn't
                 // the current file. It should be rare though, so we concatenate that
@@ -534,10 +544,20 @@ pub fn workspace_symbol_picker(cx: &mut Context) {
         ui::PickerColumn::new("kind", |item: &SymbolInformationItem, _| {
             let icons = ICONS.load();
             let name = display_symbol_kind(item.symbol.kind);
-            icons
-                .lsp()
-                .get(name)
-                .map_or_else(|| name.into(), |symbol| format!("{symbol}  {name}").into())
+
+            if let Some(icon) = icons.kind().get(name) {
+                if let Some(color) = icon.color() {
+                    Span::styled(
+                        format!("{}  {name}", icon.glyph()),
+                        Style::default().fg(color),
+                    )
+                    .into()
+                } else {
+                    format!("{}  {name}", icon.glyph()).into()
+                }
+            } else {
+                name.into()
+            }
         }),
         ui::PickerColumn::new("name", |item: &SymbolInformationItem, _| {
             item.symbol.name.as_str().into()

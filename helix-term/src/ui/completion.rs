@@ -83,7 +83,7 @@ impl menu::Item for CompletionItem {
                         Spans::from(vec![
                             Span::raw("color "),
                             Span::styled(
-                                icons.lsp().color().to_string(),
+                                icons.kind().color().glyph().to_string(),
                                 Style::default().fg(color),
                             ),
                         ])
@@ -109,15 +109,25 @@ impl menu::Item for CompletionItem {
         let icons = ICONS.load();
         let name = &kind.0[0].content;
 
-        if let Some(icon) = icons.lsp().get(name) {
-            kind.0[0].content = format!("{icon}  {name}").into();
+        let is_folder = kind.0[0].content == "folder";
+
+        if let Some(icon) = icons.kind().get(name) {
+            kind.0[0].content = format!("{}  {name}", icon.glyph()).into();
+
+            if let Some(color) = icon.color() {
+                kind.0[0].style = Style::default().fg(color);
+            } else if is_folder {
+                kind.0[0].style = *dir_style;
+            }
+        } else {
+            kind.0[0].content = format!("{name}").into();
         }
 
         let label = Span::styled(
             label,
             if deprecated {
                 Style::default().add_modifier(Modifier::CROSSED_OUT)
-            } else if kind.0[0].content == "folder" {
+            } else if is_folder {
                 *dir_style
             } else {
                 Style::default()

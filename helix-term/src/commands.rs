@@ -3230,11 +3230,32 @@ fn buffer_picker(cx: &mut Context) {
                 .path
                 .as_deref()
                 .map(helix_stdx::path::get_relative_path);
-            path.as_deref()
+
+            let name = path
+                .as_deref()
                 .and_then(Path::to_str)
-                .unwrap_or(SCRATCH_BUFFER_NAME)
-                .to_string()
-                .into()
+                .unwrap_or(SCRATCH_BUFFER_NAME);
+            let icons = ICONS.load();
+
+            let mut spans = Vec::with_capacity(2);
+
+            if let Some(icon) = icons
+                .mime()
+                .get(path.as_ref().map(|path| path.to_path_buf()).as_ref(), None)
+            {
+                if let Some(color) = icon.color() {
+                    spans.push(Span::styled(
+                        format!("{}  ", icon.glyph()),
+                        Style::default().fg(color),
+                    ));
+                } else {
+                    spans.push(Span::raw(format!("{}  ", icon.glyph())));
+                }
+            }
+
+            spans.push(Span::raw(name.to_string()));
+
+            Spans::from(spans).into()
         }),
     ];
     let picker = Picker::new(columns, 2, items, (), |cx, meta, action| {
@@ -3293,11 +3314,32 @@ fn jumplist_picker(cx: &mut Context) {
                 .path
                 .as_deref()
                 .map(helix_stdx::path::get_relative_path);
-            path.as_deref()
+
+            let name = path
+                .as_deref()
                 .and_then(Path::to_str)
-                .unwrap_or(SCRATCH_BUFFER_NAME)
-                .to_string()
-                .into()
+                .unwrap_or(SCRATCH_BUFFER_NAME);
+            let icons = ICONS.load();
+
+            let mut spans = Vec::with_capacity(2);
+
+            if let Some(icon) = icons
+                .mime()
+                .get(path.as_ref().map(|path| path.to_path_buf()).as_ref(), None)
+            {
+                if let Some(color) = icon.color() {
+                    spans.push(Span::styled(
+                        format!("{}  ", icon.glyph()),
+                        Style::default().fg(color),
+                    ));
+                } else {
+                    spans.push(Span::raw(format!("{}  ", icon.glyph())));
+                }
+            }
+
+            spans.push(Span::raw(name.to_string()));
+
+            Spans::from(spans).into()
         }),
         ui::PickerColumn::new("flags", |item: &JumpMeta, _| {
             let mut flags = Vec::new();

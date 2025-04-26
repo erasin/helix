@@ -264,7 +264,7 @@ berry = "#2A2A4D"
 <h3 id="scopes"><a class="header" href="#scopes">Scopes</a></h3>
 <p>The following is a list of scopes available to use for styling:</p>
 <h4 id="syntax-highlighting"><a class="header" href="#syntax-highlighting">Syntax highlighting</a></h4>
-<p>These keys match <a href="https://tree-sitter.github.io/tree-sitter/syntax-highlighting#theme">tree-sitter scopes</a>.</p>
+<p>These keys match <a href="https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html#highlights">tree-sitter scopes</a>.</p>
 <p>When determining styling for a highlight, the longest matching theme key will be used. For example, if the highlight is <code>function.builtin.static</code>, the key <code>function.builtin</code> will be used instead of <code>function</code>.</p>
 <p>We use a similar set of scopes as
 <a href="https://www.sublimetext.com/docs/scope_naming.html">Sublime Text</a>. See also
@@ -350,7 +350,7 @@ berry = "#2A2A4D"
 </ul>
 </li>
 <li>
-<p><code>label</code></p>
+<p><code>label</code> - <code>.class</code>, <code>#id</code> in CSS, etc.</p>
 </li>
 <li>
 <p><code>punctuation</code></p>
@@ -409,7 +409,7 @@ berry = "#2A2A4D"
 <p><code>namespace</code></p>
 </li>
 <li>
-<p><code>special</code></p>
+<p><code>special</code> - <code>derive</code> in Rust, etc.</p>
 </li>
 <li>
 <p><code>markup</code></p>
@@ -538,6 +538,7 @@ berry = "#2A2A4D"
 <tr><td><code>ui.text.focus</code></td><td>The currently selected line in the picker</td></tr>
 <tr><td><code>ui.text.inactive</code></td><td>Same as <code>ui.text</code> but when the text is inactive (e.g. suggestions)</td></tr>
 <tr><td><code>ui.text.info</code></td><td>The key: command text in <code>ui.popup.info</code> boxes</td></tr>
+<tr><td><code>ui.text.directory</code></td><td>Directory names in prompt completion</td></tr>
 <tr><td><code>ui.virtual.ruler</code></td><td>Ruler columns (see the <a href="./configuration.html#editor-section"><code>editor.rulers</code> config</a>)</td></tr>
 <tr><td><code>ui.virtual.whitespace</code></td><td>Visible whitespace characters</td></tr>
 <tr><td><code>ui.virtual.indent-guide</code></td><td>Vertical indent width guides</td></tr>
@@ -568,6 +569,7 @@ berry = "#2A2A4D"
 <tr><td><code>diagnostic.error</code></td><td>Diagnostics error (editing area)</td></tr>
 <tr><td><code>diagnostic.unnecessary</code></td><td>Diagnostics with unnecessary tag (editing area)</td></tr>
 <tr><td><code>diagnostic.deprecated</code></td><td>Diagnostics with deprecated tag (editing area)</td></tr>
+<tr><td><code>tabstop</code></td><td>Snippet placeholder</td></tr>
 </tbody></table>
 </div>
                     </main>

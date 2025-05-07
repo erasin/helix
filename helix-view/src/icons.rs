@@ -20,6 +20,7 @@ pub struct Icons {
     diagnostic: Diagnostic,
     vcs: Vcs,
     dap: Dap,
+    gutter: Gutter,
 }
 
 impl Icons {
@@ -46,6 +47,11 @@ impl Icons {
     #[inline]
     pub fn dap(&self) -> &Dap {
         &self.dap
+    }
+
+    #[inline]
+    pub fn gutter(&self) -> &Gutter {
+        &self.gutter
     }
 }
 
@@ -927,7 +933,33 @@ impl Dap {
 
     #[inline]
     pub fn unverified(&self) -> &str {
-        self.verified.as_ref().map_or("◯", |verified| verified)
+        self.unverified
+            .as_ref()
+            .map_or("◯", |unverified| unverified)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Default)]
+pub struct Gutter {
+    added: Option<String>,
+    modified: Option<String>,
+    deleted: Option<String>,
+}
+
+impl Gutter {
+    #[inline]
+    pub fn added(&self) -> &str {
+        self.added.as_ref().map_or("▍", |added| added)
+    }
+
+    #[inline]
+    pub fn modified(&self) -> &str {
+        self.modified.as_ref().map_or("▍", |modified| modified)
+    }
+
+    #[inline]
+    pub fn deleted(&self) -> &str {
+        self.deleted.as_ref().map_or("▔", |deleted| deleted)
     }
 }
 

@@ -124,15 +124,17 @@ pub fn diff<'doc>(
                     return None;
                 }
 
+                let icons = ICONS.load();
+
                 let (icon, style) = if hunk.is_pure_insertion() {
-                    ("▍", added)
+                    (icons.gutter().added(), added)
                 } else if hunk.is_pure_removal() {
                     if !first_visual_line {
                         return None;
                     }
-                    ("▔", deleted)
+                    (icons.gutter().deleted(), deleted)
                 } else {
-                    ("▍", modified)
+                    (icons.gutter().modified(), modified)
                 };
 
                 write!(out, "{}", icon).unwrap();

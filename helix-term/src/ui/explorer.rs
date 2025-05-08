@@ -441,10 +441,10 @@ impl Explorer {
 
         let list_area = match position {
             ExplorerPosition::Left => {
-                render_block(side_area.clip_left(1), surface, Borders::RIGHT).clip_bottom(1)
+                render_block(side_area.clip_left(1), surface, Borders::RIGHT).clip_bottom(0)
             }
             ExplorerPosition::Right => {
-                render_block(side_area.clip_right(1), surface, Borders::LEFT).clip_bottom(1)
+                render_block(side_area.clip_right(1), surface, Borders::LEFT).clip_bottom(0)
             }
         };
         self.render_tree(list_area, prompt_area, surface, cx);

@@ -152,6 +152,8 @@ pub fn raw_regex_prompt(
                             doc.set_selection(view.id, snapshot.clone());
                             doc.set_view_offset(view.id, offset_snapshot);
 
+                            let commandline = config.commandline as usize;
+
                             if event == PromptEvent::Validate {
                                 let callback = async move {
                                     let call: job::Callback = Callback::EditorCompositor(Box::new(
@@ -160,7 +162,7 @@ pub fn raw_regex_prompt(
                                             let size = compositor.size();
                                             let popup = Popup::new("invalid-regex", contents)
                                                 .position(Some(helix_core::Position::new(
-                                                    size.height as usize - 2, // 2 = statusline + commandline
+                                                    size.height as usize - 1 - commandline, // 2 = statusline + commandline
                                                     0,
                                                 )))
                                                 .auto_close(true);
@@ -408,6 +410,41 @@ pub mod completers {
         }
         names.push("default".into());
         names.push("base16_default".into());
+        names.sort();
+        names.dedup();
+
+        fuzzy_match(input, names, false)
+            .into_iter()
+            .map(|(name, _)| ((0..), name.into()))
+            .collect()
+    }
+
+    pub fn tutor(_editor: &Editor, input: &str) -> Vec<Completion> {
+        let read_names = |p: &std::path::Path| -> Vec<String> {
+            std::fs::read_dir(p)
+                .map(|entries| {
+                    entries
+                        .filter_map(|entry| {
+                            entry.ok().map(|entry| {
+                                entry
+                                    .path()
+                                    .file_stem()
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .into_owned()
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        let mut names = read_names(&helix_loader::config_dir().join("tutors"));
+        for rt_dir in helix_loader::runtime_dirs() {
+            names.extend(read_names(&rt_dir.join("tutors")));
+        }
+
+        names.push("default".into());
         names.sort();
         names.dedup();
 

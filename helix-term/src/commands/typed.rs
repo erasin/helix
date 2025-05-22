@@ -1847,13 +1847,30 @@ fn debug_remote(
     dap_start_impl(cx, name.as_deref(), address, Some(args))
 }
 
-fn tutor(cx: &mut compositor::Context, _args: Args, event: PromptEvent) -> anyhow::Result<()> {
+fn tutor(cx: &mut compositor::Context, args: Args, event: PromptEvent) -> anyhow::Result<()> {
     if event != PromptEvent::Validate {
         return Ok(());
     }
 
-    let path = helix_loader::runtime_file(Path::new("tutor"));
-    cx.editor.open(&path, Action::Replace)?;
+    let default_tutor = helix_loader::runtime_file(Path::new("tutor"));
+
+    let path = if let Some(name) = args.first() {
+        let name = name.to_lowercase();
+        if name.eq("default") {
+            None
+        } else {
+            let mut ps = helix_loader::runtime_dirs().to_vec();
+            ps.insert(0, helix_loader::config_dir());
+            ps.into_iter()
+                .map(|x| x.join("tutors").join(&name))
+                .find(|x| x.exists())
+        }
+    } else {
+        None
+    };
+
+    cx.editor
+        .open(&path.unwrap_or(default_tutor), Action::Replace)?;
     // Unset path to prevent accidentally saving to the original tutor file.
     doc_mut!(cx.editor).set_path(None);
     Ok(())
@@ -2245,6 +2262,34 @@ fn open_workspace_config(
 
     cx.editor
         .open(&helix_loader::workspace_config_file(), Action::Replace)?;
+    Ok(())
+}
+
+fn open_lang_config(
+    cx: &mut compositor::Context,
+    _args: Args,
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+
+    cx.editor
+        .open(&helix_loader::lang_config_file(), Action::Replace)?;
+    Ok(())
+}
+
+fn open_workspace_lang_config(
+    cx: &mut compositor::Context,
+    _args: Args,
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+
+    cx.editor
+        .open(&helix_loader::workspace_lang_config_file(), Action::Replace)?;
     Ok(())
 }
 
@@ -3284,9 +3329,9 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         aliases: &[],
         doc: "Open the tutorial.",
         fun: tutor,
-        completer: CommandCompleter::none(),
+        completer: CommandCompleter::positional(&[completers::tutor]),
         signature: Signature {
-            positionals: (0, Some(0)),
+            positionals: (0, Some(1)),
             ..Signature::DEFAULT
         },
     },
@@ -3416,6 +3461,50 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         aliases: &[],
         doc: "Open the workspace config.toml file.",
         fun: open_workspace_config,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "lang-config-open",
+        aliases: &[],
+        doc: "Open the user languages.toml file.",
+        fun: open_lang_config,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "lang-config-open-workspace",
+        aliases: &[],
+        doc: "Open the workspace languages.toml file.",
+        fun: open_workspace_lang_config,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "lang-config-open",
+        aliases: &[],
+        doc: "Open the user languages.toml file.",
+        fun: open_lang_config,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "lang-config-open-workspace",
+        aliases: &[],
+        doc: "Open the workspace languages.toml file.",
+        fun: open_workspace_lang_config,
         completer: CommandCompleter::none(),
         signature: Signature {
             positionals: (0, Some(0)),

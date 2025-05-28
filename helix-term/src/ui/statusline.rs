@@ -144,6 +144,7 @@ where
         helix_view::editor::StatusLineElement::ReadOnlyIndicator => render_read_only_indicator,
         helix_view::editor::StatusLineElement::FileEncoding => render_file_encoding,
         helix_view::editor::StatusLineElement::FileLineEnding => render_file_line_ending,
+        helix_view::editor::StatusLineElement::FileIndentStyle => render_file_indent_style,
         helix_view::editor::StatusLineElement::FileType => render_file_type,
         helix_view::editor::StatusLineElement::Diagnostics => render_diagnostics,
         helix_view::editor::StatusLineElement::WorkspaceDiagnostics => render_workspace_diagnostics,
@@ -159,7 +160,6 @@ where
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
         helix_view::editor::StatusLineElement::WordCount => render_word_count,
-        helix_view::editor::StatusLineElement::IndentStyle => render_indent_style,
     }
 }
 
@@ -639,7 +639,7 @@ where
     }
 }
 
-fn render_indent_style<'a, F>(context: &mut RenderContext<'a>, write: F)
+fn render_file_indent_style<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {

@@ -611,6 +611,9 @@ pub enum StatusLineElement {
     /// The file line endings (CRLF or LF)
     FileLineEnding,
 
+    /// The file indentation style
+    FileIndentStyle,
+
     /// The file type (language ID or "text")
     FileType,
 
@@ -649,9 +652,6 @@ pub enum StatusLineElement {
 
     /// Word Count
     WordCount,
-
-    // Indentation style
-    IndentStyle,
 }
 
 // Cursor shape is read and used on every rendered frame and so needs

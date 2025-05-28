@@ -649,7 +649,7 @@ where
         context,
         match style {
             IndentStyle::Tabs => "Tabs".into(),
-            IndentStyle::Spaces(i) => format!("Spaces:{i}").into(),
+            IndentStyle::Spaces(i) => format!("{i} Spaces").into(),
         },
     );
 }

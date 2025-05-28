@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use helix_core::indent::IndentStyle;
 use helix_core::{coords_at_pos, encoding, Position};
 use helix_lsp::lsp::DiagnosticSeverity;
 use helix_view::document::DEFAULT_LANGUAGE_NAME;
@@ -158,6 +159,7 @@ where
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
         helix_view::editor::StatusLineElement::WordCount => render_word_count,
+        helix_view::editor::StatusLineElement::IndentStyle => render_indent_style,
     }
 }
 
@@ -635,4 +637,19 @@ where
     if let Some(reg) = context.editor.selected_register {
         write(context, format!(" reg={} ", reg).into())
     }
+}
+
+fn render_indent_style<'a, F>(context: &mut RenderContext<'a>, write: F)
+where
+    F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
+{
+    let style = context.doc.indent_style;
+
+    write(
+        context,
+        match style {
+            IndentStyle::Tabs => "Tabs".into(),
+            IndentStyle::Spaces(i) => format!("Spaces:{i}").into(),
+        },
+    );
 }

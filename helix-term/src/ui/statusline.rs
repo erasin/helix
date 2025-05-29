@@ -648,8 +648,10 @@ where
     write(
         context,
         match style {
-            IndentStyle::Tabs => "Tabs".into(),
-            IndentStyle::Spaces(i) => format!("{i} Spaces").into(),
+            IndentStyle::Tabs => " tabs ".into(),
+            IndentStyle::Spaces(indent) => {
+                format!(" {} space{} ", indent, if indent == 1 { "" } else { "s" }).into()
+            }
         },
     );
 }

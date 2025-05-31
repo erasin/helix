@@ -69,6 +69,7 @@ pub fn render(context: &mut RenderContext, viewport: Rect, surface: &mut Surface
     for element_id in &config.statusline.left {
         let render = get_render_function(*element_id);
         (render)(context, |context, span| {
+            let base_style = statusline_style(context, &element_id.to_string());
             append(&mut context.parts.left, span, base_style)
         });
     }
@@ -85,6 +86,7 @@ pub fn render(context: &mut RenderContext, viewport: Rect, surface: &mut Surface
     for element_id in &config.statusline.right {
         let render = get_render_function(*element_id);
         (render)(context, |context, span| {
+            let base_style = statusline_style(context, &element_id.to_string());
             append(&mut context.parts.right, span, base_style)
         })
     }
@@ -104,6 +106,7 @@ pub fn render(context: &mut RenderContext, viewport: Rect, surface: &mut Surface
     for element_id in &config.statusline.center {
         let render = get_render_function(*element_id);
         (render)(context, |context, span| {
+            let base_style = statusline_style(context, &element_id.to_string());
             append(&mut context.parts.center, span, base_style)
         })
     }
@@ -160,6 +163,18 @@ where
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
         helix_view::editor::StatusLineElement::WordCount => render_word_count,
+    }
+}
+
+fn statusline_style(context: &RenderContext, scope: &str) -> Style {
+    let scope = format!("ui.statusline.{scope}");
+    let visible = context.focused;
+    let config = context.editor.config();
+
+    if visible && config.color_modes {
+        context.editor.theme.get(&scope)
+    } else {
+        Style::default()
     }
 }
 
@@ -599,10 +614,9 @@ fn render_separator<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let sep = &context.editor.config().statusline.separator;
-    let style = context.editor.theme.get("ui.statusline.separator");
+    let sep = context.editor.config().statusline.separator.clone();
 
-    write(context, Span::styled(sep.to_string(), style));
+    write(context, sep.into());
 }
 
 fn render_spacer<'a, F>(context: &mut RenderContext<'a>, write: F)
@@ -643,11 +657,10 @@ fn render_file_indent_style<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let style = context.doc.indent_style;
-
+    let indent_style = context.doc.indent_style;
     write(
         context,
-        match style {
+        match indent_style {
             IndentStyle::Tabs => " tabs ".into(),
             IndentStyle::Spaces(indent) => {
                 format!(" {} space{} ", indent, if indent == 1 { "" } else { "s" }).into()

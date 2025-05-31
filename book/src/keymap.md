@@ -310,6 +310,7 @@ This layer is a kludge of mappings, mostly pickers.
 | `R`     | Replace selections by clipboard contents                                | `replace_selections_with_clipboard`        |
 | `/`     | Global search in workspace folder                                       | `global_search`                            |
 | `?`     | Open command palette                                                    | `command_palette`                          |
+| `B`     | Show blame for the current line                                         | `blame_line`                             |
 | `e`     | Reveal current file in explorer                                         | `reveal_current_file`                      |
 
 

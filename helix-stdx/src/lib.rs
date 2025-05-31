@@ -5,6 +5,5 @@ pub mod range;
 pub mod rope;
 pub mod str;
 pub mod time;
-pub mod str;
 
 pub use range::Range;

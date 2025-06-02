@@ -2,6 +2,9 @@
 
 ;; variables
 
+(identifier) @variable
+
+(operator_identifier) @operator
 
 ((identifier) @variable.builtin
  (#match? @variable.builtin "^this$"))
@@ -53,20 +56,13 @@
 (var_declaration
   name: (identifier) @variable)
 
-; method definition
+; function definitions/declarations
 
-(class_definition
-  body: (template_body
-    (function_definition
-      name: (identifier) @function.method)))
-(object_definition
-  body: (template_body
-    (function_definition
-      name: (identifier) @function.method)))
-(trait_definition
-  body: (template_body
-    (function_definition
-      name: (identifier) @function.method)))
+(function_declaration
+    name: (identifier) @function.method)
+
+(function_definition
+      name: (identifier) @function.method)
 
 ; imports/exports
 
@@ -263,13 +259,9 @@
 
 "return" @keyword.control.return
 
-(comment) @comment
+[(comment) (block_comment)] @comment
 
 ;; `case` is a conditional keyword in case_block
 
 (case_block
   (case_clause ("case") @keyword.control.conditional))
-
-(identifier) @variable
-
-(operator_identifier) @operator

@@ -39,11 +39,11 @@
     (identifier) @variable.parameter))
 
 ; (p?: t)
-; (p?: t = 1) // Invalid but still posible to hihglight.
+; (p?: t = 1) // Invalid but still possible to highlight.
 (optional_parameter 
   (identifier) @variable.parameter)
 
-; (...p?: t) // Invalid but still posible to hihglight.
+; (...p?: t) // Invalid but still possible to highlight.
 (optional_parameter
   (rest_pattern
     (identifier) @variable.parameter))
@@ -59,10 +59,14 @@
     (pair_pattern
       value: (identifier) @variable.parameter)))
 
-; ([ p ]?: t[]) // Invalid but still posible to hihglight.
+; ([ p ]?: t[]) // Invalid but still possible to highlight.
 (optional_parameter
   (array_pattern
     (identifier) @variable.parameter))
+
+(public_field_definition) @punctuation.special
+(this_type) @variable.builtin
+(type_predicate) @keyword.operator
 
 ; Punctuation
 ; -----------
@@ -82,6 +86,7 @@
 [
   "abstract"
   "declare"
+  "module"
   "export"
   "infer"
   "implements"
@@ -108,6 +113,8 @@
 ; -----
 
 (type_identifier) @type
+(type_parameter
+  name: (type_identifier) @type.parameter)
 (predefined_type) @type.builtin
 
 ; Type arguments and parameters
@@ -125,6 +132,9 @@
     ">"
   ] @punctuation.bracket)
 
+(omitting_type_annotation) @punctuation.special
+(opting_type_annotation) @punctuation.special
+
 ; Literals
 ; --------
 
@@ -132,9 +142,6 @@
   (template_literal_type)
 ] @string
 
-; Tokens
-; ------
-
-(template_type
-  "${" @punctuation.special
-  "}" @punctuation.special) @embedded
+(import_require_clause
+  (identifier) "="
+  ("require") @keyword)

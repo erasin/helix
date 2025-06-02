@@ -1,3 +1,26 @@
+; inherits: c
+
+; Constants
+
+(this) @variable.builtin
+(null) @constant.builtin
+
+; Types
+
+(using_declaration ("using" "namespace" (identifier) @namespace))
+(using_declaration ("using" "namespace" (qualified_identifier name: (identifier) @namespace)))
+(namespace_definition name: (namespace_identifier) @namespace)
+(namespace_identifier) @namespace
+
+(qualified_identifier name: (identifier) @type.enum.variant)
+
+(auto) @type
+"decltype" @type
+
+(ref_qualifier ["&" "&&"] @type.builtin)
+(reference_declarator ["&" "&&"] @type.builtin)
+(abstract_reference_declarator ["&" "&&"] @type.builtin)
+
 ; Functions
 
 ; These casts are parsed as function calls, but are not.
@@ -28,26 +51,12 @@
 (function_declarator
   declarator: (field_identifier) @function)
 
-; Types
+; Parameters
 
-(using_declaration ("using" "namespace" (identifier) @namespace))
-(using_declaration ("using" "namespace" (qualified_identifier name: (identifier) @namespace)))
-(namespace_definition name: (namespace_identifier) @namespace)
-(namespace_identifier) @namespace
-
-(qualified_identifier name: (identifier) @type.enum.variant)
-
-(auto) @type
-"decltype" @type
-
-(ref_qualifier ["&" "&&"] @type.builtin)
-(reference_declarator ["&" "&&"] @type.builtin)
-(abstract_reference_declarator ["&" "&&"] @type.builtin)
-
-; Constants
-
-(this) @variable.builtin
-(nullptr) @constant.builtin
+(parameter_declaration
+  declarator: (reference_declarator (identifier) @variable.parameter))
+(optional_parameter_declaration
+  declarator: (identifier) @variable.parameter)
 
 ; Keywords
 
@@ -125,5 +134,3 @@
 ; Strings
 
 (raw_string_literal) @string
-
-; inherits: c

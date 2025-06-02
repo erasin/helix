@@ -1,14 +1,23 @@
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{anyhow, bail, Error};
 use arc_swap::access::DynAccess;
 use arc_swap::ArcSwap;
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use helix_core::auto_pairs::AutoPairs;
+use helix_core::chars::char_is_word;
+use helix_core::command_line::Token;
+use helix_core::diagnostic::DiagnosticProvider;
 use helix_core::doc_formatter::TextFormat;
 use helix_core::encoding::Encoding;
-use helix_core::syntax::{Highlight, LanguageServerFeature};
-use helix_core::text_annotations::{InlineAnnotation, TextAnnotations};
+use helix_core::snippets::{ActiveSnippet, SnippetRenderCtx};
+use helix_core::syntax::config::LanguageServerFeature;
+use helix_core::text_annotations::{InlineAnnotation, Overlay};
+use helix_event::TaskController;
+use helix_lsp::util::lsp_pos_to_pos;
+use helix_stdx::faccess::{copy_metadata, readonly};
 use helix_vcs::{DiffHandle, DiffProviderRegistry};
+use once_cell::sync::OnceCell;
+use thiserror;
 
 use ::parking_lot::Mutex;
 use serde::de::{self, Deserialize, Deserializer};
@@ -18,28 +27,35 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 use std::time::SystemTime;
 
 use helix_core::{
+    editor_config::EditorConfig,
     encoding,
     history::{History, State, UndoKind},
     indent::{auto_detect_indent_style, IndentStyle},
     line_ending::auto_detect_line_ending,
-    syntax::{self, LanguageConfiguration},
+    syntax::{self, config::LanguageConfiguration},
     ChangeSet, Diagnostic, LineEnding, Range, Rope, RopeBuilder, Selection, Syntax, Transaction,
 };
 
-use crate::editor::Config;
-use crate::{DocumentId, Editor, Theme, View, ViewId};
+use crate::{
+    editor::Config,
+    events::{DocumentDidChange, SelectionDidChange},
+    expansion,
+    view::ViewPosition,
+    DocumentId, Editor, Theme, View, ViewId,
+};
 
 /// 8kB of buffer space for encoding and decoding `Rope`s.
 const BUF_SIZE: usize = 8192;
 
 const DEFAULT_INDENT: IndentStyle = IndentStyle::Tabs;
+const DEFAULT_TAB_WIDTH: usize = 4;
 
 pub const DEFAULT_LANGUAGE_NAME: &str = "text";
 
@@ -94,11 +110,11 @@ impl Serialize for Mode {
         serializer.collect_str(self)
     }
 }
-
 /// A snapshot of the text of a document that we want to write out to disk
 #[derive(Debug, Clone)]
 pub struct DocumentSavedEvent {
     pub revision: usize,
+    pub save_time: SystemTime,
     pub doc_id: DocumentId,
     pub path: PathBuf,
     pub text: Rope,
@@ -112,35 +128,34 @@ pub struct SavePoint {
     /// The view this savepoint is associated with
     pub view: ViewId,
     revert: Mutex<Transaction>,
-    pub text: Rope,
 }
 
-impl SavePoint {
-    pub fn cursor(&self) -> usize {
-        // we always create transactions with selections
-        self.revert
-            .lock()
-            .selection()
-            .unwrap()
-            .primary()
-            .cursor(self.text.slice(..))
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentOpenError {
+    #[error("path must be a regular file, symlink, or directory")]
+    IrregularFile,
+    #[error(transparent)]
+    IoError(#[from] io::Error),
 }
 
 pub struct Document {
     pub(crate) id: DocumentId,
     text: Rope,
     selections: HashMap<ViewId, Selection>,
+    view_data: HashMap<ViewId, ViewData>,
+    pub active_snippet: Option<ActiveSnippet>,
 
     /// Inlay hints annotations for the document, by view.
     ///
     /// To know if they're up-to-date, check the `id` field in `DocumentInlayHints`.
     pub(crate) inlay_hints: HashMap<ViewId, DocumentInlayHints>,
+    pub(crate) jump_labels: HashMap<ViewId, Vec<Overlay>>,
     /// Set to `true` when the document is updated, reset to `false` on the next inlay hints
     /// update from the LSP
     pub inlay_hints_oudated: bool,
 
     path: Option<PathBuf>,
+    relative_path: OnceCell<Option<PathBuf>>,
     encoding: &'static encoding::Encoding,
     has_bom: bool,
 
@@ -148,6 +163,7 @@ pub struct Document {
 
     /// Current indent style.
     pub indent_style: IndentStyle,
+    editor_config: EditorConfig,
 
     /// The document's default line ending.
     pub line_ending: LineEnding,
@@ -187,6 +203,24 @@ pub struct Document {
     pub focused_at: std::time::Instant,
 
     pub readonly: bool,
+
+    /// Annotations for LSP document color swatches
+    pub color_swatches: Option<DocumentColorSwatches>,
+    // NOTE: ideally this would live on the handler for color swatches. This is blocked on a
+    // large refactor that would make `&mut Editor` available on the `DocumentDidChange` event.
+    pub color_swatch_controller: TaskController,
+
+    // NOTE: this field should eventually go away - we should use the Editor's syn_loader instead
+    // of storing a copy on every doc. Then we can remove the surrounding `Arc` and use the
+    // `ArcSwap` directly.
+    syn_loader: Arc<ArcSwap<syntax::Loader>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DocumentColorSwatches {
+    pub color_swatches: Vec<InlineAnnotation>,
+    pub colors: Vec<syntax::Highlight>,
+    pub color_swatches_padding: Vec<InlineAnnotation>,
 }
 
 /// Inlay hints for a single `(Document, View)` combo.
@@ -210,22 +244,22 @@ pub struct DocumentInlayHints {
     pub id: DocumentInlayHintsId,
 
     /// Inlay hints of `TYPE` kind, if any.
-    pub type_inlay_hints: Rc<[InlineAnnotation]>,
+    pub type_inlay_hints: Vec<InlineAnnotation>,
 
     /// Inlay hints of `PARAMETER` kind, if any.
-    pub parameter_inlay_hints: Rc<[InlineAnnotation]>,
+    pub parameter_inlay_hints: Vec<InlineAnnotation>,
 
     /// Inlay hints that are neither `TYPE` nor `PARAMETER`.
     ///
     /// LSPs are not required to associate a kind to their inlay hints, for example Rust-Analyzer
     /// currently never does (February 2023) and the LSP spec may add new kinds in the future that
     /// we want to display even if we don't have some special highlighting for them.
-    pub other_inlay_hints: Rc<[InlineAnnotation]>,
+    pub other_inlay_hints: Vec<InlineAnnotation>,
 
     /// Inlay hint padding. When creating the final `TextAnnotations`, the `before` padding must be
     /// added first, then the regular inlay hints, then the `after` padding.
-    pub padding_before_inlay_hints: Rc<[InlineAnnotation]>,
-    pub padding_after_inlay_hints: Rc<[InlineAnnotation]>,
+    pub padding_before_inlay_hints: Vec<InlineAnnotation>,
+    pub padding_after_inlay_hints: Vec<InlineAnnotation>,
 }
 
 impl DocumentInlayHints {
@@ -233,11 +267,11 @@ impl DocumentInlayHints {
     pub fn empty_with_id(id: DocumentInlayHintsId) -> Self {
         Self {
             id,
-            type_inlay_hints: Rc::new([]),
-            parameter_inlay_hints: Rc::new([]),
-            other_inlay_hints: Rc::new([]),
-            padding_before_inlay_hints: Rc::new([]),
-            padding_after_inlay_hints: Rc::new([]),
+            type_inlay_hints: Vec::new(),
+            parameter_inlay_hints: Vec::new(),
+            other_inlay_hints: Vec::new(),
+            padding_before_inlay_hints: Vec::new(),
+            padding_after_inlay_hints: Vec::new(),
         }
     }
 }
@@ -265,6 +299,7 @@ impl fmt::Debug for Document {
             .field("selections", &self.selections)
             .field("inlay_hints_oudated", &self.inlay_hints_oudated)
             .field("text_annotations", &self.inlay_hints)
+            .field("view_data", &self.view_data)
             .field("path", &self.path)
             .field("encoding", &self.encoding)
             .field("restore_cursor", &self.restore_cursor)
@@ -289,6 +324,14 @@ impl fmt::Debug for DocumentInlayHintsId {
         f.debug_struct("DocumentInlayHintsId")
             .field("lines", &(self.first_line..self.last_line))
             .finish()
+    }
+}
+
+impl Editor {
+    pub(crate) fn clear_doc_relative_paths(&mut self) {
+        for doc in self.documents_mut() {
+            doc.relative_path.take();
+        }
     }
 }
 
@@ -389,7 +432,7 @@ fn apply_bom(encoding: &'static encoding::Encoding, buf: &mut [u8; BUF_SIZE]) ->
 pub fn from_reader<R: std::io::Read + ?Sized>(
     reader: &mut R,
     encoding: Option<&'static Encoding>,
-) -> Result<(Rope, &'static Encoding, bool), Error> {
+) -> Result<(Rope, &'static Encoding, bool), io::Error> {
     // These two buffers are 8192 bytes in size each and are used as
     // intermediaries during the decoding process. Text read into `buf`
     // from `reader` is decoded into `buf_out` as UTF-8. Once either
@@ -532,7 +575,7 @@ fn read_and_detect_encoding<R: std::io::Read + ?Sized>(
     reader: &mut R,
     encoding: Option<&'static Encoding>,
     buf: &mut [u8],
-) -> Result<(&'static Encoding, bool, encoding::Decoder, usize), Error> {
+) -> Result<(&'static Encoding, bool, encoding::Decoder, usize), io::Error> {
     let read = reader.read(buf)?;
     let is_empty = read == 0;
     let (encoding, has_bom) = encoding
@@ -633,7 +676,7 @@ where
     *mut_ref = f(mem::take(mut_ref));
 }
 
-use helix_lsp::{lsp, Client, LanguageServerName};
+use helix_lsp::{lsp, Client, LanguageServerId, LanguageServerName};
 use url::Url;
 
 impl Document {
@@ -641,6 +684,7 @@ impl Document {
         text: Rope,
         encoding_with_bom_info: Option<(&'static Encoding, bool)>,
         config: Arc<dyn DynAccess<Config>>,
+        syn_loader: Arc<ArcSwap<syntax::Loader>>,
     ) -> Self {
         let (encoding, has_bom) = encoding_with_bom_info.unwrap_or((encoding::UTF_8, false));
         let line_ending = config.load().default_line_ending.into();
@@ -649,14 +693,18 @@ impl Document {
 
         Self {
             id: DocumentId::default(),
+            active_snippet: None,
             path: None,
+            relative_path: OnceCell::new(),
             encoding,
             has_bom,
             text,
             selections: HashMap::default(),
             inlay_hints: HashMap::default(),
             inlay_hints_oudated: false,
+            view_data: Default::default(),
             indent_style: DEFAULT_INDENT,
+            editor_config: EditorConfig::default(),
             line_ending,
             restore_cursor: false,
             syntax: None,
@@ -676,13 +724,20 @@ impl Document {
             version_control_head: None,
             focused_at: std::time::Instant::now(),
             readonly: false,
+            jump_labels: HashMap::new(),
+            color_swatches: None,
+            color_swatch_controller: TaskController::new(),
+            syn_loader,
         }
     }
 
-    pub fn default(config: Arc<dyn DynAccess<Config>>) -> Self {
+    pub fn default(
+        config: Arc<dyn DynAccess<Config>>,
+        syn_loader: Arc<ArcSwap<syntax::Loader>>,
+    ) -> Self {
         let line_ending: LineEnding = config.load().default_line_ending.into();
         let text = Rope::from(line_ending.as_str());
-        Self::from(text, None, config)
+        Self::from(text, None, config, syn_loader)
     }
 
     // TODO: async fn?
@@ -690,29 +745,45 @@ impl Document {
     /// overwritten with the `encoding` parameter.
     pub fn open(
         path: &Path,
-        encoding: Option<&'static Encoding>,
-        config_loader: Option<Arc<syntax::Loader>>,
+        mut encoding: Option<&'static Encoding>,
+        detect_language: bool,
         config: Arc<dyn DynAccess<Config>>,
-    ) -> Result<Self, Error> {
+        syn_loader: Arc<ArcSwap<syntax::Loader>>,
+    ) -> Result<Self, DocumentOpenError> {
+        // If the path is not a regular file (e.g.: /dev/random) it should not be opened.
+        if path.metadata().is_ok_and(|metadata| !metadata.is_file()) {
+            return Err(DocumentOpenError::IrregularFile);
+        }
+
+        let editor_config = if config.load().editor_config {
+            EditorConfig::find(path)
+        } else {
+            EditorConfig::default()
+        };
+        encoding = encoding.or(editor_config.encoding);
+
         // Open the file if it exists, otherwise assume it is a new file (and thus empty).
         let (rope, encoding, has_bom) = if path.exists() {
-            let mut file =
-                std::fs::File::open(path).context(format!("unable to open {:?}", path))?;
+            let mut file = std::fs::File::open(path)?;
             from_reader(&mut file, encoding)?
         } else {
-            let line_ending: LineEnding = config.load().default_line_ending.into();
+            let line_ending = editor_config
+                .line_ending
+                .unwrap_or_else(|| config.load().default_line_ending.into());
             let encoding = encoding.unwrap_or(encoding::UTF_8);
             (Rope::from(line_ending.as_str()), encoding, false)
         };
 
-        let mut doc = Self::from(rope, Some((encoding, has_bom)), config);
+        let loader = syn_loader.load();
+        let mut doc = Self::from(rope, Some((encoding, has_bom)), config, syn_loader);
 
         // set the path and try detecting the language
         doc.set_path(Some(path));
-        if let Some(loader) = config_loader {
-            doc.detect_language(loader);
+        if detect_language {
+            doc.detect_language(&loader);
         }
 
+        doc.editor_config = editor_config;
         doc.detect_indent_and_line_ending();
 
         Ok(doc)
@@ -720,9 +791,12 @@ impl Document {
 
     /// The same as [`format`], but only returns formatting changes if auto-formatting
     /// is configured.
-    pub fn auto_format(&self) -> Option<BoxFuture<'static, Result<Transaction, FormatterError>>> {
+    pub fn auto_format(
+        &self,
+        editor: &Editor,
+    ) -> Option<BoxFuture<'static, Result<Transaction, FormatterError>>> {
         if self.language_config()?.auto_format {
-            self.format()
+            self.format(editor)
         } else {
             None
         }
@@ -732,17 +806,48 @@ impl Document {
     /// to format it nicely.
     // We can't use anyhow::Result here since the output of the future has to be
     // clonable to be used as shared future. So use a custom error type.
-    pub fn format(&self) -> Option<BoxFuture<'static, Result<Transaction, FormatterError>>> {
+    pub fn format(
+        &self,
+        editor: &Editor,
+    ) -> Option<BoxFuture<'static, Result<Transaction, FormatterError>>> {
         if let Some((fmt_cmd, fmt_args)) = self
             .language_config()
             .and_then(|c| c.formatter.as_ref())
-            .and_then(|formatter| Some((which::which(&formatter.command).ok()?, &formatter.args)))
+            .and_then(|formatter| {
+                Some((
+                    helix_stdx::env::which(&formatter.command).ok()?,
+                    &formatter.args,
+                ))
+            })
         {
+            log::debug!(
+                "formatting '{}' with command '{}', args {fmt_args:?}",
+                self.display_name(),
+                fmt_cmd.display(),
+            );
             use std::process::Stdio;
             let text = self.text().clone();
+
             let mut process = tokio::process::Command::new(&fmt_cmd);
+
+            if let Some(doc_dir) = self.path.as_ref().and_then(|path| path.parent()) {
+                process.current_dir(doc_dir);
+            }
+
+            let args = match fmt_args
+                .iter()
+                .map(|content| expansion::expand(editor, Token::expand(content)))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(args) => args,
+                Err(err) => {
+                    log::error!("Failed to expand formatter arguments: {err}");
+                    return None;
+                }
+            };
+
             process
-                .args(fmt_args)
+                .args(args.iter().map(AsRef::as_ref))
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -754,17 +859,21 @@ impl Document {
                         command: fmt_cmd.to_string_lossy().into(),
                         error: e.kind(),
                     })?;
-                {
-                    let mut stdin = process.stdin.take().ok_or(FormatterError::BrokenStdin)?;
-                    to_writer(&mut stdin, (encoding::UTF_8, false), &text)
-                        .await
-                        .map_err(|_| FormatterError::BrokenStdin)?;
-                }
 
-                let output = process
-                    .wait_with_output()
-                    .await
-                    .map_err(|_| FormatterError::WaitForOutputFailed)?;
+                let mut stdin = process.stdin.take().ok_or(FormatterError::BrokenStdin)?;
+                let input_text = text.clone();
+                let input_task = tokio::spawn(async move {
+                    to_writer(&mut stdin, (encoding::UTF_8, false), &input_text).await
+                    // Note that `stdin` is dropped here, causing the pipe to close. This can
+                    // avoid a deadlock with `wait_with_output` below if the process is waiting on
+                    // stdin to close before exiting.
+                });
+                let (input_result, output_result) = tokio::join! {
+                    input_task,
+                    process.wait_with_output(),
+                };
+                let _ = input_result.map_err(|_| FormatterError::BrokenStdin)?;
+                let output = output_result.map_err(|_| FormatterError::WaitForOutputFailed)?;
 
                 if !output.status.success() {
                     if !output.stderr.is_empty() {
@@ -777,7 +886,7 @@ impl Document {
                 } else if !output.stderr.is_empty() {
                     log::debug!(
                         "Formatter printed to stderr: {}",
-                        String::from_utf8_lossy(&output.stderr).to_string()
+                        String::from_utf8_lossy(&output.stderr)
                     );
                 }
 
@@ -806,10 +915,13 @@ impl Document {
         )?;
 
         let fut = async move {
-            let edits = request.await.unwrap_or_else(|e| {
-                log::warn!("LSP formatting failed: {}", e);
-                Default::default()
-            });
+            let edits = request
+                .await
+                .unwrap_or_else(|e| {
+                    log::warn!("LSP formatting failed: {}", e);
+                    Default::default()
+                })
+                .unwrap_or_default();
             Ok(helix_lsp::util::generate_transaction_from_edits(
                 &text,
                 edits,
@@ -853,7 +965,7 @@ impl Document {
         let text = self.text().clone();
 
         let path = match path {
-            Some(path) => helix_core::path::get_canonicalized_path(&path),
+            Some(path) => helix_stdx::path::canonicalize(path),
             None => {
                 if self.path.is_none() {
                     bail!("Can't save with no path set!");
@@ -874,7 +986,7 @@ impl Document {
 
         // We encode the file according to the `Document`'s encoding.
         let future = async move {
-            use tokio::{fs, fs::File};
+            use tokio::fs;
             if let Some(parent) = path.parent() {
                 // TODO: display a prompt asking the user if the directories should be created
                 if !parent.exists() {
@@ -896,12 +1008,111 @@ impl Document {
                     }
                 }
             }
+            let write_path = tokio::fs::read_link(&path)
+                .await
+                .ok()
+                .and_then(|p| {
+                    if p.is_relative() {
+                        path.parent().map(|parent| parent.join(p))
+                    } else {
+                        Some(p)
+                    }
+                })
+                .unwrap_or_else(|| path.clone());
 
-            let mut file = File::create(&path).await?;
-            to_writer(&mut file, encoding_with_bom_info, &text).await?;
+            if readonly(&write_path) {
+                bail!(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Path is read only"
+                ));
+            }
+
+            // Assume it is a hardlink to prevent data loss if the metadata cant be read (e.g. on certain Windows configurations)
+            let is_hardlink = helix_stdx::faccess::hardlink_count(&write_path).unwrap_or(2) > 1;
+            let backup = if path.exists() {
+                let path_ = write_path.clone();
+                // hacks: we use tempfile to handle the complex task of creating
+                // non clobbered temporary path for us we don't want
+                // the whole automatically delete path on drop thing
+                // since the path doesn't exist yet, we just want
+                // the path
+                tokio::task::spawn_blocking(move || -> Option<PathBuf> {
+                    let mut builder = tempfile::Builder::new();
+                    builder.prefix(path_.file_name()?).suffix(".bck");
+
+                    let backup_path = if is_hardlink {
+                        builder
+                            .make_in(path_.parent()?, |backup| std::fs::copy(&path_, backup))
+                            .ok()?
+                            .into_temp_path()
+                    } else {
+                        builder
+                            .make_in(path_.parent()?, |backup| std::fs::rename(&path_, backup))
+                            .ok()?
+                            .into_temp_path()
+                    };
+
+                    backup_path.keep().ok()
+                })
+                .await
+                .ok()
+                .flatten()
+            } else {
+                None
+            };
+
+            let write_result: anyhow::Result<_> = async {
+                let mut dst = tokio::fs::File::create(&write_path).await?;
+                to_writer(&mut dst, encoding_with_bom_info, &text).await?;
+                dst.sync_all().await?;
+                Ok(())
+            }
+            .await;
+
+            let save_time = match fs::metadata(&write_path).await {
+                Ok(metadata) => metadata.modified().map_or(SystemTime::now(), |mtime| mtime),
+                Err(_) => SystemTime::now(),
+            };
+
+            if let Some(backup) = backup {
+                if is_hardlink {
+                    let mut delete = true;
+                    if write_result.is_err() {
+                        // Restore backup
+                        let _ = tokio::fs::copy(&backup, &write_path).await.map_err(|e| {
+                            delete = false;
+                            log::error!("Failed to restore backup on write failure: {e}")
+                        });
+                    }
+
+                    if delete {
+                        // Delete backup
+                        let _ = tokio::fs::remove_file(backup)
+                            .await
+                            .map_err(|e| log::error!("Failed to remove backup file on write: {e}"));
+                    }
+                } else if write_result.is_err() {
+                    // restore backup
+                    let _ = tokio::fs::rename(&backup, &write_path)
+                        .await
+                        .map_err(|e| log::error!("Failed to restore backup on write failure: {e}"));
+                } else {
+                    // copy metadata and delete backup
+                    let _ = tokio::task::spawn_blocking(move || {
+                        let _ = copy_metadata(&backup, &write_path)
+                            .map_err(|e| log::error!("Failed to copy metadata on write: {e}"));
+                        let _ = std::fs::remove_file(backup)
+                            .map_err(|e| log::error!("Failed to remove backup file on write: {e}"));
+                    })
+                    .await;
+                }
+            }
+
+            write_result?;
 
             let event = DocumentSavedEvent {
                 revision: current_rev,
+                save_time,
                 doc_id,
                 path,
                 text: text.clone(),
@@ -909,14 +1120,10 @@ impl Document {
 
             for (_, language_server) in language_servers {
                 if !language_server.is_initialized() {
-                    return Ok(event);
+                    continue;
                 }
-                if let Some(identifier) = &identifier {
-                    if let Some(notification) =
-                        language_server.text_document_did_save(identifier.clone(), &text)
-                    {
-                        notification.await?;
-                    }
+                if let Some(id) = identifier.clone() {
+                    language_server.text_document_did_save(id, &text);
                 }
             }
 
@@ -927,66 +1134,77 @@ impl Document {
     }
 
     /// Detect the programming language based on the file type.
-    pub fn detect_language(&mut self, config_loader: Arc<syntax::Loader>) {
-        self.set_language(
-            self.detect_language_config(&config_loader),
-            Some(config_loader),
-        );
+    pub fn detect_language(&mut self, loader: &syntax::Loader) {
+        self.set_language(self.detect_language_config(loader), loader);
     }
 
     /// Detect the programming language based on the file type.
     pub fn detect_language_config(
         &self,
-        config_loader: &syntax::Loader,
-    ) -> Option<Arc<helix_core::syntax::LanguageConfiguration>> {
-        config_loader
-            .language_config_for_file_name(self.path.as_ref()?)
-            .or_else(|| config_loader.language_config_for_shebang(self.text().slice(..)))
+        loader: &syntax::Loader,
+    ) -> Option<Arc<syntax::config::LanguageConfiguration>> {
+        let language = loader
+            .language_for_filename(self.path.as_ref()?)
+            .or_else(|| loader.language_for_shebang(self.text().slice(..)))?;
+
+        Some(loader.language(language).config().clone())
     }
 
     /// Detect the indentation used in the file, or otherwise defaults to the language indentation
     /// configured in `languages.toml`, with a fallback to tabs if it isn't specified. Line ending
     /// is likewise auto-detected, and will remain unchanged if no line endings were detected.
     pub fn detect_indent_and_line_ending(&mut self) {
-        self.indent_style = auto_detect_indent_style(&self.text).unwrap_or_else(|| {
-            self.language_config()
-                .and_then(|config| config.indent.as_ref())
-                .map_or(DEFAULT_INDENT, |config| IndentStyle::from_str(&config.unit))
-        });
-        if let Some(line_ending) = auto_detect_line_ending(&self.text) {
+        self.indent_style = if let Some(indent_style) = self.editor_config.indent_style {
+            indent_style
+        } else {
+            auto_detect_indent_style(&self.text).unwrap_or_else(|| {
+                self.language_config()
+                    .and_then(|config| config.indent.as_ref())
+                    .map_or(DEFAULT_INDENT, |config| IndentStyle::from_str(&config.unit))
+            })
+        };
+        if let Some(line_ending) = self
+            .editor_config
+            .line_ending
+            .or_else(|| auto_detect_line_ending(&self.text))
+        {
             self.line_ending = line_ending;
         }
     }
 
-    #[cfg(unix)]
-    // Detect if the file is readonly and change the readonly field if necessary (unix only)
-    pub fn detect_readonly(&mut self) {
-        use rustix::fs::{access, Access};
-        // Allows setting the flag for files the user cannot modify, like root files
-        self.readonly = match &self.path {
-            None => false,
-            Some(p) => match access(p, Access::WRITE_OK) {
-                Ok(_) => false,
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
-                Err(_) => true,
+    pub(crate) fn detect_editor_config(&mut self) {
+        if self.config.load().editor_config {
+            if let Some(path) = self.path.as_ref() {
+                self.editor_config = EditorConfig::find(path);
+            }
+        }
+    }
+
+    pub fn pickup_last_saved_time(&mut self) {
+        self.last_saved_time = match self.path() {
+            Some(path) => match path.metadata() {
+                Ok(metadata) => match metadata.modified() {
+                    Ok(mtime) => mtime,
+                    Err(err) => {
+                        log::debug!("Could not fetch file system's mtime, falling back to current system time: {}", err);
+                        SystemTime::now()
+                    }
+                },
+                Err(err) => {
+                    log::debug!("Could not fetch file system's mtime, falling back to current system time: {}", err);
+                    SystemTime::now()
+                }
             },
+            None => SystemTime::now(),
         };
     }
 
-    #[cfg(not(unix))]
-    // Detect if the file is readonly and change the readonly field if necessary (non-unix os)
+    // Detect if the file is readonly and change the readonly field if necessary (unix only)
     pub fn detect_readonly(&mut self) {
-        // TODO Use the Windows' function `CreateFileW` to check if a file is readonly
-        // Discussion: https://github.com/helix-editor/helix/pull/7740#issuecomment-1656806459
-        // Vim implementation: https://github.com/vim/vim/blob/4c0089d696b8d1d5dc40568f25ea5738fa5bbffb/src/os_win32.c#L7665
-        // Windows binding: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/Storage/FileSystem/fn.CreateFileW.html
+        // Allows setting the flag for files the user cannot modify, like root files
         self.readonly = match &self.path {
             None => false,
-            Some(p) => match std::fs::metadata(p) {
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
-                Err(_) => false,
-                Ok(metadata) => metadata.permissions().readonly(),
-            },
+            Some(p) => readonly(p),
         };
     }
 
@@ -997,11 +1215,13 @@ impl Document {
         provider_registry: &DiffProviderRegistry,
     ) -> Result<(), Error> {
         let encoding = self.encoding;
-        let path = self
-            .path()
-            .filter(|path| path.exists())
-            .ok_or_else(|| anyhow!("can't find file to reload from {:?}", self.display_name()))?
-            .to_owned();
+        let path = match self.path() {
+            None => return Ok(()),
+            Some(path) => match path.exists() {
+                true => path.to_owned(),
+                false => bail!("can't find file to reload from {:?}", self.display_name()),
+            },
+        };
 
         // Once we have a valid path we check if its readonly status has changed
         self.detect_readonly();
@@ -1016,9 +1236,7 @@ impl Document {
         self.apply(&transaction, view.id);
         self.append_changes_to_history(view);
         self.reset_modified();
-
-        self.last_saved_time = SystemTime::now();
-
+        self.pickup_last_saved_time();
         self.detect_indent_and_line_ending();
 
         match provider_registry.get_diff_base(&path) {
@@ -1046,54 +1264,58 @@ impl Document {
         self.encoding
     }
 
+    /// sets the document path without sending events to various
+    /// observers (like LSP), in most cases `Editor::set_doc_path`
+    /// should be used instead
     pub fn set_path(&mut self, path: Option<&Path>) {
-        let path = path.map(helix_core::path::get_canonicalized_path);
+        let path = path.map(helix_stdx::path::canonicalize);
+
+        // `take` to remove any prior relative path that may have existed.
+        // This will get set in `relative_path()`.
+        self.relative_path.take();
 
         // if parent doesn't exist we still want to open the document
         // and error out when document is saved
         self.path = path;
 
         self.detect_readonly();
+        self.pickup_last_saved_time();
     }
 
     /// Set the programming language for the file and load associated data (e.g. highlighting)
     /// if it exists.
     pub fn set_language(
         &mut self,
-        language_config: Option<Arc<helix_core::syntax::LanguageConfiguration>>,
-        loader: Option<Arc<helix_core::syntax::Loader>>,
+        language_config: Option<Arc<syntax::config::LanguageConfiguration>>,
+        loader: &syntax::Loader,
     ) {
-        if let (Some(language_config), Some(loader)) = (language_config, loader) {
-            if let Some(highlight_config) = language_config.highlight_config(&loader.scopes()) {
-                self.syntax = Syntax::new(self.text.slice(..), highlight_config, loader);
-            }
-
-            self.language = Some(language_config);
-        } else {
-            self.syntax = None;
-            self.language = None;
-        };
-    }
-
-    /// Set the programming language for the file if you know the name (scope) but don't have the
-    /// [`syntax::LanguageConfiguration`] for it.
-    pub fn set_language2(&mut self, scope: &str, config_loader: Arc<syntax::Loader>) {
-        let language_config = config_loader.language_config_for_scope(scope);
-
-        self.set_language(language_config, Some(config_loader));
+        self.language = language_config;
+        self.syntax = self.language.as_ref().and_then(|config| {
+            Syntax::new(self.text.slice(..), config.language(), loader)
+                .map_err(|err| {
+                    // `NoRootConfig` means that there was an issue loading the language/syntax
+                    // config for the root language of the document. An error must have already
+                    // been logged by `LanguageData::syntax_config`.
+                    if err != syntax::HighlighterError::NoRootConfig {
+                        log::warn!("Error building syntax for '{}': {err}", self.display_name());
+                    }
+                })
+                .ok()
+        });
     }
 
     /// Set the programming language for the file if you know the language but don't have the
-    /// [`syntax::LanguageConfiguration`] for it.
+    /// [`syntax::config::LanguageConfiguration`] for it.
     pub fn set_language_by_language_id(
         &mut self,
         language_id: &str,
-        config_loader: Arc<syntax::Loader>,
+        loader: &syntax::Loader,
     ) -> anyhow::Result<()> {
-        let language_config = config_loader
-            .language_config_for_language_id(language_id)
+        let language = loader
+            .language_for_name(language_id)
             .ok_or_else(|| anyhow!("invalid language id: {}", language_id))?;
-        self.set_language(Some(language_config), Some(config_loader));
+        let config = loader.language(language).config().clone();
+        self.set_language(Some(config), loader);
         Ok(())
     }
 
@@ -1102,6 +1324,10 @@ impl Document {
         // TODO: use a transaction?
         self.selections
             .insert(view_id, selection.ensure_invariants(self.text().slice(..)));
+        helix_event::dispatch(SelectionDidChange {
+            doc: self,
+            view: view_id,
+        })
     }
 
     /// Find the origin selection of the text in a document, i.e. where
@@ -1122,12 +1348,14 @@ impl Document {
         self.set_selection(view_id, Selection::single(origin.anchor, origin.head));
     }
 
-    /// Initializes a new selection for the given view if it does not
-    /// already have one.
+    /// Initializes a new selection and view_data for the given view
+    /// if it does not already have them.
     pub fn ensure_view_init(&mut self, view_id: ViewId) {
-        if self.selections.get(&view_id).is_none() {
+        if !self.selections.contains_key(&view_id) {
             self.reset_selection(view_id);
         }
+
+        self.view_data_mut(view_id);
     }
 
     /// Mark document as recent used for MRU sorting
@@ -1139,6 +1367,7 @@ impl Document {
     pub fn remove_view(&mut self, view_id: ViewId) {
         self.selections.remove(&view_id);
         self.inlay_hints.remove(&view_id);
+        self.jump_labels.remove(&view_id);
     }
 
     /// Apply a [`Transaction`] to the [`Document`] to change its text.
@@ -1151,131 +1380,166 @@ impl Document {
         use helix_core::Assoc;
 
         let old_doc = self.text().clone();
+        let changes = transaction.changes();
+        if !changes.apply(&mut self.text) {
+            return false;
+        }
 
-        let success = transaction.changes().apply(&mut self.text);
-
-        if success {
-            for selection in self.selections.values_mut() {
-                *selection = selection
-                    .clone()
-                    // Map through changes
-                    .map(transaction.changes())
-                    // Ensure all selections across all views still adhere to invariants.
-                    .ensure_invariants(self.text.slice(..));
-            }
-
-            // if specified, the current selection should instead be replaced by transaction.selection
+        if changes.is_empty() {
             if let Some(selection) = transaction.selection() {
                 self.selections.insert(
                     view_id,
                     selection.clone().ensure_invariants(self.text.slice(..)),
                 );
+                helix_event::dispatch(SelectionDidChange {
+                    doc: self,
+                    view: view_id,
+                });
             }
-
-            self.modified_since_accessed = true;
+            return true;
         }
 
-        if !transaction.changes().is_empty() {
-            self.version += 1;
-            // start computing the diff in parallel
-            if let Some(diff_handle) = &self.diff_handle {
-                diff_handle.update_document(self.text.clone(), false);
-            }
+        self.modified_since_accessed = true;
+        self.version += 1;
 
-            // generate revert to savepoint
-            if !self.savepoints.is_empty() {
-                let revert = transaction.invert(&old_doc);
-                self.savepoints
-                    .retain_mut(|save_point| match save_point.upgrade() {
-                        Some(savepoint) => {
-                            let mut revert_to_savepoint = savepoint.revert.lock();
-                            *revert_to_savepoint =
-                                revert.clone().compose(mem::take(&mut revert_to_savepoint));
-                            true
-                        }
-                        None => false,
-                    })
-            }
+        for selection in self.selections.values_mut() {
+            *selection = selection
+                .clone()
+                // Map through changes
+                .map(transaction.changes())
+                // Ensure all selections across all views still adhere to invariants.
+                .ensure_invariants(self.text.slice(..));
+        }
 
-            // update tree-sitter syntax tree
-            if let Some(syntax) = &mut self.syntax {
-                // TODO: no unwrap
-                let res = syntax.update(
-                    old_doc.slice(..),
-                    self.text.slice(..),
-                    transaction.changes(),
-                );
-                if res.is_err() {
-                    log::error!("TS parser failed, disabeling TS for the current buffer: {res:?}");
-                    self.syntax = None;
-                }
-            }
+        for view_data in self.view_data.values_mut() {
+            view_data.view_position.anchor = transaction
+                .changes()
+                .map_pos(view_data.view_position.anchor, Assoc::Before);
+        }
 
-            let changes = transaction.changes();
-
-            changes.update_positions(
-                self.diagnostics
-                    .iter_mut()
-                    .map(|diagnostic| (&mut diagnostic.range.start, Assoc::After)),
-            );
-            changes.update_positions(
-                self.diagnostics
-                    .iter_mut()
-                    .map(|diagnostic| (&mut diagnostic.range.end, Assoc::After)),
-            );
-            // map state.diagnostics over changes::map_pos too
-            for diagnostic in &mut self.diagnostics {
-                diagnostic.line = self.text.char_to_line(diagnostic.range.start);
-            }
-
-            self.diagnostics
-                .sort_unstable_by_key(|diagnostic| diagnostic.range);
-
-            // Update the inlay hint annotations' positions, helping ensure they are displayed in the proper place
-            let apply_inlay_hint_changes = |annotations: &mut Rc<[InlineAnnotation]>| {
-                if let Some(data) = Rc::get_mut(annotations) {
-                    changes.update_positions(
-                        data.iter_mut()
-                            .map(|annotation| (&mut annotation.char_idx, Assoc::After)),
-                    );
-                }
-            };
-
-            self.inlay_hints_oudated = true;
-            for text_annotation in self.inlay_hints.values_mut() {
-                let DocumentInlayHints {
-                    id: _,
-                    type_inlay_hints,
-                    parameter_inlay_hints,
-                    other_inlay_hints,
-                    padding_before_inlay_hints,
-                    padding_after_inlay_hints,
-                } = text_annotation;
-
-                apply_inlay_hint_changes(padding_before_inlay_hints);
-                apply_inlay_hint_changes(type_inlay_hints);
-                apply_inlay_hint_changes(parameter_inlay_hints);
-                apply_inlay_hint_changes(other_inlay_hints);
-                apply_inlay_hint_changes(padding_after_inlay_hints);
-            }
-
-            if emit_lsp_notification {
-                // emit lsp notification
-                for language_server in self.language_servers() {
-                    let notify = language_server.text_document_did_change(
-                        self.versioned_identifier(),
-                        &old_doc,
-                        self.text(),
-                        changes,
-                    );
-
-                    if let Some(notify) = notify {
-                        tokio::spawn(notify);
+        // generate revert to savepoint
+        if !self.savepoints.is_empty() {
+            let revert = transaction.invert(&old_doc);
+            self.savepoints
+                .retain_mut(|save_point| match save_point.upgrade() {
+                    Some(savepoint) => {
+                        let mut revert_to_savepoint = savepoint.revert.lock();
+                        *revert_to_savepoint =
+                            revert.clone().compose(mem::take(&mut revert_to_savepoint));
+                        true
                     }
-                }
+                    None => false,
+                })
+        }
+
+        // update tree-sitter syntax tree
+        if let Some(syntax) = &mut self.syntax {
+            let loader = self.syn_loader.load();
+            if let Err(err) = syntax.update(
+                old_doc.slice(..),
+                self.text.slice(..),
+                transaction.changes(),
+                &loader,
+            ) {
+                log::error!("TS parser failed, disabling TS for the current buffer: {err}");
+                self.syntax = None;
             }
         }
-        success
+
+        // TODO: all of that should likely just be hooks
+        // start computing the diff in parallel
+        if let Some(diff_handle) = &self.diff_handle {
+            diff_handle.update_document(self.text.clone(), false);
+        }
+
+        // map diagnostics over changes too
+        changes.update_positions(self.diagnostics.iter_mut().map(|diagnostic| {
+            let assoc = if diagnostic.starts_at_word {
+                Assoc::BeforeWord
+            } else {
+                Assoc::After
+            };
+            (&mut diagnostic.range.start, assoc)
+        }));
+        changes.update_positions(self.diagnostics.iter_mut().filter_map(|diagnostic| {
+            if diagnostic.zero_width {
+                // for zero width diagnostics treat the diagnostic as a point
+                // rather than a range
+                return None;
+            }
+            let assoc = if diagnostic.ends_at_word {
+                Assoc::AfterWord
+            } else {
+                Assoc::Before
+            };
+            Some((&mut diagnostic.range.end, assoc))
+        }));
+        self.diagnostics.retain_mut(|diagnostic| {
+            if diagnostic.zero_width {
+                diagnostic.range.end = diagnostic.range.start
+            } else if diagnostic.range.start >= diagnostic.range.end {
+                return false;
+            }
+            diagnostic.line = self.text.char_to_line(diagnostic.range.start);
+            true
+        });
+
+        self.diagnostics.sort_by_key(|diagnostic| {
+            (
+                diagnostic.range,
+                diagnostic.severity,
+                diagnostic.provider.clone(),
+            )
+        });
+
+        // Update the inlay hint annotations' positions, helping ensure they are displayed in the proper place
+        let apply_inlay_hint_changes = |annotations: &mut Vec<InlineAnnotation>| {
+            changes.update_positions(
+                annotations
+                    .iter_mut()
+                    .map(|annotation| (&mut annotation.char_idx, Assoc::After)),
+            );
+        };
+
+        self.inlay_hints_oudated = true;
+        for text_annotation in self.inlay_hints.values_mut() {
+            let DocumentInlayHints {
+                id: _,
+                type_inlay_hints,
+                parameter_inlay_hints,
+                other_inlay_hints,
+                padding_before_inlay_hints,
+                padding_after_inlay_hints,
+            } = text_annotation;
+
+            apply_inlay_hint_changes(padding_before_inlay_hints);
+            apply_inlay_hint_changes(type_inlay_hints);
+            apply_inlay_hint_changes(parameter_inlay_hints);
+            apply_inlay_hint_changes(other_inlay_hints);
+            apply_inlay_hint_changes(padding_after_inlay_hints);
+        }
+
+        helix_event::dispatch(DocumentDidChange {
+            doc: self,
+            view: view_id,
+            old_text: &old_doc,
+            changes,
+            ghost_transaction: !emit_lsp_notification,
+        });
+
+        // if specified, the current selection should instead be replaced by transaction.selection
+        if let Some(selection) = transaction.selection() {
+            self.selections.insert(
+                view_id,
+                selection.clone().ensure_invariants(self.text.slice(..)),
+            );
+            helix_event::dispatch(SelectionDidChange {
+                doc: self,
+                view: view_id,
+            });
+        }
+
+        true
     }
 
     fn apply_inner(
@@ -1316,6 +1580,11 @@ impl Document {
     }
 
     fn undo_redo_impl(&mut self, view: &mut View, undo: bool) -> bool {
+        if undo {
+            self.append_changes_to_history(view);
+        } else if !self.changes.is_empty() {
+            return false;
+        }
         let mut history = self.history.take();
         let txn = if undo { history.undo() } else { history.redo() };
         let success = if let Some(txn) = txn {
@@ -1370,7 +1639,6 @@ impl Document {
         let savepoint = Arc::new(SavePoint {
             view: view.id,
             revert: Mutex::new(revert),
-            text: self.text.clone(),
         });
         self.savepoints.push(Arc::downgrade(&savepoint));
         savepoint
@@ -1397,6 +1665,11 @@ impl Document {
     }
 
     fn earlier_later_impl(&mut self, view: &mut View, uk: UndoKind, earlier: bool) -> bool {
+        if earlier {
+            self.append_changes_to_history(view);
+        } else if !self.changes.is_empty() {
+            return false;
+        }
         let txns = if earlier {
             self.history.get_mut().earlier(uk)
         } else {
@@ -1478,7 +1751,7 @@ impl Document {
     }
 
     /// Set the document's latest saved revision to the given one.
-    pub fn set_last_saved_revision(&mut self, rev: usize) {
+    pub fn set_last_saved_revision(&mut self, rev: usize, save_time: SystemTime) {
         log::debug!(
             "doc {} revision updated {} -> {}",
             self.id,
@@ -1486,7 +1759,7 @@ impl Document {
             rev
         );
         self.last_saved_revision = rev;
-        self.last_saved_time = SystemTime::now();
+        self.last_saved_time = save_time;
     }
 
     /// Get the document's latest saved revision.
@@ -1536,6 +1809,12 @@ impl Document {
         self.version
     }
 
+    pub fn path_completion_enabled(&self) -> bool {
+        self.language_config()
+            .and_then(|lang_config| lang_config.path_completion)
+            .unwrap_or_else(|| self.config.load().path_completion)
+    }
+
     /// maintains the order as configured in the language_servers TOML array
     pub fn language_servers(&self) -> impl Iterator<Item = &helix_lsp::Client> {
         self.language_config().into_iter().flat_map(move |config| {
@@ -1573,7 +1852,7 @@ impl Document {
         })
     }
 
-    pub fn supports_language_server(&self, id: usize) -> bool {
+    pub fn supports_language_server(&self, id: LanguageServerId) -> bool {
         self.language_servers().any(|l| l.id() == id)
     }
 
@@ -1613,14 +1892,33 @@ impl Document {
 
     /// The width that the tab character is rendered at
     pub fn tab_width(&self) -> usize {
-        self.language_config()
-            .and_then(|config| config.indent.as_ref())
-            .map_or(4, |config| config.tab_width) // fallback to 4 columns
+        self.editor_config
+            .tab_width
+            .map(|n| n.get() as usize)
+            .unwrap_or_else(|| {
+                self.language_config()
+                    .and_then(|config| config.indent.as_ref())
+                    .map_or(DEFAULT_TAB_WIDTH, |config| config.tab_width)
+            })
     }
 
     // The width (in spaces) of a level of indentation.
     pub fn indent_width(&self) -> usize {
         self.indent_style.indent_width(self.tab_width())
+    }
+
+    /// Whether the document should have a trailing line ending appended on save.
+    pub fn insert_final_newline(&self) -> bool {
+        self.editor_config
+            .insert_final_newline
+            .unwrap_or_else(|| self.config.load().insert_final_newline)
+    }
+
+    /// Whether the document should trim whitespace preceding line endings on save.
+    pub fn trim_trailing_whitespace(&self) -> bool {
+        self.editor_config
+            .trim_trailing_whitespace
+            .unwrap_or_else(|| self.config.load().trim_trailing_whitespace)
     }
 
     pub fn changes(&self) -> &ChangeSet {
@@ -1638,6 +1936,10 @@ impl Document {
         Url::from_file_path(self.path()?).ok()
     }
 
+    pub fn uri(&self) -> Option<helix_core::Uri> {
+        Some(self.path()?.clone().into())
+    }
+
     #[inline]
     pub fn text(&self) -> &Rope {
         &self.text
@@ -1653,16 +1955,41 @@ impl Document {
         &self.selections
     }
 
-    pub fn relative_path(&self) -> Option<PathBuf> {
-        self.path
-            .as_deref()
-            .map(helix_core::path::get_relative_path)
+    fn view_data(&self, view_id: ViewId) -> &ViewData {
+        self.view_data
+            .get(&view_id)
+            .expect("This should only be called after ensure_view_init")
     }
 
-    pub fn display_name(&self) -> Cow<'static, str> {
+    fn view_data_mut(&mut self, view_id: ViewId) -> &mut ViewData {
+        self.view_data.entry(view_id).or_default()
+    }
+
+    pub(crate) fn get_view_offset(&self, view_id: ViewId) -> Option<ViewPosition> {
+        Some(self.view_data.get(&view_id)?.view_position)
+    }
+
+    pub fn view_offset(&self, view_id: ViewId) -> ViewPosition {
+        self.view_data(view_id).view_position
+    }
+
+    pub fn set_view_offset(&mut self, view_id: ViewId, new_offset: ViewPosition) {
+        self.view_data_mut(view_id).view_position = new_offset;
+    }
+
+    pub fn relative_path(&self) -> Option<&Path> {
+        self.relative_path
+            .get_or_init(|| {
+                self.path
+                    .as_ref()
+                    .map(|path| helix_stdx::path::get_relative_path(path).to_path_buf())
+            })
+            .as_deref()
+    }
+
+    pub fn display_name(&self) -> Cow<'_, str> {
         self.relative_path()
-            .map(|path| path.to_string_lossy().to_string().into())
-            .unwrap_or_else(|| SCRATCH_BUFFER_NAME.into())
+            .map_or_else(|| SCRATCH_BUFFER_NAME.into(), |path| path.to_string_lossy())
     }
 
     // transact(Fn) ?
@@ -1692,32 +2019,139 @@ impl Document {
         )
     }
 
+    pub fn lsp_diagnostic_to_diagnostic(
+        text: &Rope,
+        language_config: Option<&LanguageConfiguration>,
+        diagnostic: &helix_lsp::lsp::Diagnostic,
+        provider: DiagnosticProvider,
+        offset_encoding: helix_lsp::OffsetEncoding,
+    ) -> Option<Diagnostic> {
+        use helix_core::diagnostic::{Range, Severity::*};
+
+        // TODO: convert inside server
+        let start =
+            if let Some(start) = lsp_pos_to_pos(text, diagnostic.range.start, offset_encoding) {
+                start
+            } else {
+                log::warn!("lsp position out of bounds - {:?}", diagnostic);
+                return None;
+            };
+
+        let end = if let Some(end) = lsp_pos_to_pos(text, diagnostic.range.end, offset_encoding) {
+            end
+        } else {
+            log::warn!("lsp position out of bounds - {:?}", diagnostic);
+            return None;
+        };
+
+        let severity = diagnostic.severity.and_then(|severity| match severity {
+            lsp::DiagnosticSeverity::ERROR => Some(Error),
+            lsp::DiagnosticSeverity::WARNING => Some(Warning),
+            lsp::DiagnosticSeverity::INFORMATION => Some(Info),
+            lsp::DiagnosticSeverity::HINT => Some(Hint),
+            severity => {
+                log::error!("unrecognized diagnostic severity: {:?}", severity);
+                None
+            }
+        });
+
+        if let Some(lang_conf) = language_config {
+            if let Some(severity) = severity {
+                if severity < lang_conf.diagnostic_severity {
+                    return None;
+                }
+            }
+        };
+        use helix_core::diagnostic::{DiagnosticTag, NumberOrString};
+
+        let code = match diagnostic.code.clone() {
+            Some(x) => match x {
+                lsp::NumberOrString::Number(x) => Some(NumberOrString::Number(x)),
+                lsp::NumberOrString::String(x) => Some(NumberOrString::String(x)),
+            },
+            None => None,
+        };
+
+        let tags = if let Some(tags) = &diagnostic.tags {
+            let new_tags = tags
+                .iter()
+                .filter_map(|tag| match *tag {
+                    lsp::DiagnosticTag::DEPRECATED => Some(DiagnosticTag::Deprecated),
+                    lsp::DiagnosticTag::UNNECESSARY => Some(DiagnosticTag::Unnecessary),
+                    _ => None,
+                })
+                .collect();
+
+            new_tags
+        } else {
+            Vec::new()
+        };
+
+        let ends_at_word =
+            start != end && end != 0 && text.get_char(end - 1).is_some_and(char_is_word);
+        let starts_at_word = start != end && text.get_char(start).is_some_and(char_is_word);
+
+        Some(Diagnostic {
+            range: Range { start, end },
+            ends_at_word,
+            starts_at_word,
+            zero_width: start == end,
+            line: diagnostic.range.start.line as usize,
+            message: diagnostic.message.clone(),
+            severity,
+            code,
+            tags,
+            source: diagnostic.source.clone(),
+            data: diagnostic.data.clone(),
+            provider,
+        })
+    }
+
     #[inline]
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
 
-    pub fn shown_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> + DoubleEndedIterator {
-        self.diagnostics.iter().filter(|d| {
-            self.language_servers_with_feature(LanguageServerFeature::Diagnostics)
-                .any(|ls| ls.id() == d.language_server_id)
-        })
-    }
-
     pub fn replace_diagnostics(
         &mut self,
-        mut diagnostics: Vec<Diagnostic>,
-        language_server_id: usize,
+        diagnostics: impl IntoIterator<Item = Diagnostic>,
+        unchanged_sources: &[String],
+        provider: Option<&DiagnosticProvider>,
     ) {
-        self.clear_diagnostics(language_server_id);
-        self.diagnostics.append(&mut diagnostics);
-        self.diagnostics
-            .sort_unstable_by_key(|diagnostic| diagnostic.range);
+        if unchanged_sources.is_empty() {
+            if let Some(provider) = provider {
+                self.diagnostics
+                    .retain(|diagnostic| &diagnostic.provider != provider);
+            } else {
+                self.diagnostics.clear();
+            }
+        } else {
+            self.diagnostics.retain(|d| {
+                if provider.is_some_and(|provider| provider != &d.provider) {
+                    return true;
+                }
+
+                if let Some(source) = &d.source {
+                    unchanged_sources.contains(source)
+                } else {
+                    false
+                }
+            });
+        }
+        self.diagnostics.extend(diagnostics);
+        self.diagnostics.sort_by_key(|diagnostic| {
+            (
+                diagnostic.range,
+                diagnostic.severity,
+                diagnostic.provider.clone(),
+            )
+        });
     }
 
-    pub fn clear_diagnostics(&mut self, language_server_id: usize) {
+    /// clears diagnostics for a given language server id if set, otherwise all diagnostics are cleared
+    pub fn clear_diagnostics_for_language_server(&mut self, id: LanguageServerId) {
         self.diagnostics
-            .retain(|d| d.language_server_id != language_server_id);
+            .retain(|d| d.provider.language_server_id() != Some(id));
     }
 
     /// Get the document's auto pairs. If the document has a recognized
@@ -1742,13 +2176,28 @@ impl Document {
         }
     }
 
+    pub fn snippet_ctx(&self) -> SnippetRenderCtx {
+        SnippetRenderCtx {
+            // TODO snippet variable resolution
+            resolve_var: Box::new(|_| None),
+            tab_width: self.tab_width(),
+            indent_style: self.indent_style,
+            line_ending: self.line_ending.as_str(),
+        }
+    }
+
+    pub fn text_width(&self) -> usize {
+        self.editor_config
+            .max_line_length
+            .map(|n| n.get() as usize)
+            .or_else(|| self.language_config().and_then(|config| config.text_width))
+            .unwrap_or_else(|| self.config.load().text_width)
+    }
+
     pub fn text_format(&self, mut viewport_width: u16, theme: Option<&Theme>) -> TextFormat {
         let config = self.config.load();
-        let text_width = self
-            .language_config()
-            .and_then(|config| config.text_width)
-            .unwrap_or(config.text_width);
-        let soft_wrap_at_text_width = self
+        let text_width = self.text_width();
+        let mut soft_wrap_at_text_width = self
             .language_config()
             .and_then(|config| {
                 config
@@ -1759,12 +2208,13 @@ impl Document {
             .or(config.soft_wrap.wrap_at_text_width)
             .unwrap_or(false);
         if soft_wrap_at_text_width {
-            // We increase max_line_len by 1 because softwrap considers the newline character
-            // as part of the line length while the "typical" expectation is that this is not the case.
-            // In particular other commands like :reflow do not count the line terminator.
-            // This is technically inconsistent for the last line as that line never has a line terminator
-            // but having the last visual line exceed the width by 1 seems like a rare edge case.
-            viewport_width = viewport_width.min(text_width as u16 + 1)
+            // if the viewport is smaller than the specified
+            // width then this setting has no effcet
+            if text_width >= viewport_width as usize {
+                soft_wrap_at_text_width = false;
+            } else {
+                viewport_width = text_width as u16;
+            }
         }
         let config = self.config.load();
         let editor_soft_wrap = &config.soft_wrap;
@@ -1799,20 +2249,22 @@ impl Document {
             viewport_width,
             wrap_indicator: wrap_indicator.into_boxed_str(),
             wrap_indicator_highlight: theme
-                .and_then(|theme| theme.find_scope_index("ui.virtual.wrap"))
-                .map(Highlight),
+                .and_then(|theme| theme.find_highlight("ui.virtual.wrap")),
+            soft_wrap_at_text_width,
         }
-    }
-
-    /// Get the text annotations that apply to the whole document, those that do not apply to any
-    /// specific view.
-    pub fn text_annotations(&self, _theme: Option<&Theme>) -> TextAnnotations {
-        TextAnnotations::default()
     }
 
     /// Set the inlay hints for this document and `view_id`.
     pub fn set_inlay_hints(&mut self, view_id: ViewId, inlay_hints: DocumentInlayHints) {
         self.inlay_hints.insert(view_id, inlay_hints);
+    }
+
+    pub fn set_jump_labels(&mut self, view_id: ViewId, labels: Vec<Overlay>) {
+        self.jump_labels.insert(view_id, labels);
+    }
+
+    pub fn remove_jump_labels(&mut self, view_id: ViewId) {
+        self.jump_labels.remove(&view_id);
     }
 
     /// Get the inlay hints for this document and `view_id`.
@@ -1827,6 +2279,11 @@ impl Document {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct ViewData {
+    view_position: ViewPosition,
+}
+
 #[derive(Clone, Debug)]
 pub enum FormatterError {
     SpawningFailed {
@@ -1836,7 +2293,6 @@ pub enum FormatterError {
     BrokenStdin,
     WaitForOutputFailed,
     InvalidUtf8Output,
-    DiskReloadError(String),
     NonZeroExitStatus(Option<String>),
 }
 
@@ -1851,7 +2307,6 @@ impl Display for FormatterError {
             Self::BrokenStdin => write!(f, "Could not write to formatter stdin"),
             Self::WaitForOutputFailed => write!(f, "Waiting for formatter output failed"),
             Self::InvalidUtf8Output => write!(f, "Invalid UTF-8 formatter output"),
-            Self::DiskReloadError(error) => write!(f, "Error reloading file from disk: {}", error),
             Self::NonZeroExitStatus(Some(output)) => write!(f, "Formatter error: {}", output),
             Self::NonZeroExitStatus(None) => {
                 write!(f, "Formatter exited with non zero exit status")
@@ -1874,6 +2329,7 @@ mod test {
             text,
             None,
             Arc::new(ArcSwap::new(Arc::new(Config::default()))),
+            Arc::new(ArcSwap::from_pointee(syntax::Loader::default())),
         );
         let view = ViewId::default();
         doc.set_selection(view, Selection::single(0, 0));
@@ -1912,6 +2368,7 @@ mod test {
             text,
             None,
             Arc::new(ArcSwap::new(Arc::new(Config::default()))),
+            Arc::new(ArcSwap::from_pointee(syntax::Loader::default())),
         );
         let view = ViewId::default();
         doc.set_selection(view, Selection::single(5, 5));
@@ -2025,9 +2482,12 @@ mod test {
     #[test]
     fn test_line_ending() {
         assert_eq!(
-            Document::default(Arc::new(ArcSwap::new(Arc::new(Config::default()))))
-                .text()
-                .to_string(),
+            Document::default(
+                Arc::new(ArcSwap::new(Arc::new(Config::default()))),
+                Arc::new(ArcSwap::from_pointee(syntax::Loader::default()))
+            )
+            .text()
+            .to_string(),
             helix_core::NATIVE_LINE_ENDING.as_str()
         );
     }

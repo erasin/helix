@@ -1,6 +1,7 @@
 use anyhow::Result;
 use helix_core::Position;
 use helix_view::tree::Layout;
+use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Default)]
@@ -16,13 +17,27 @@ pub struct Args {
     pub verbosity: u64,
     pub log_file: Option<PathBuf>,
     pub config_file: Option<PathBuf>,
-    pub files: Vec<(PathBuf, Position)>,
+    pub files: IndexMap<PathBuf, Vec<Position>>,
+    pub working_directory: Option<PathBuf>,
 }
 
 impl Args {
     pub fn parse_args() -> Result<Args> {
         let mut args = Args::default();
         let mut argv = std::env::args().peekable();
+        let mut line_number = 0;
+
+        let mut insert_file_with_position = |file_with_position: &str| {
+            let (filename, position) = parse_file(file_with_position);
+
+            // Before setting the working directory, resolve all the paths in args.files
+            let filename = helix_stdx::path::canonicalize(filename);
+
+            args.files
+                .entry(filename)
+                .and_modify(|positions| positions.push(position))
+                .or_insert_with(|| vec![position]);
+        };
 
         argv.next(); // skip the program, we don't care about that
 
@@ -59,6 +74,20 @@ impl Args {
                     Some(path) => args.log_file = Some(path.into()),
                     None => anyhow::bail!("--log must specify a path to write"),
                 },
+                "-w" | "--working-dir" => match argv.next().as_deref() {
+                    Some(path) => {
+                        args.working_directory = if Path::new(path).is_dir() {
+                            Some(PathBuf::from(path))
+                        } else {
+                            anyhow::bail!(
+                                "--working-dir specified does not exist or is not a directory"
+                            )
+                        }
+                    }
+                    None => {
+                        anyhow::bail!("--working-dir must specify an initial working directory")
+                    }
+                },
                 arg if arg.starts_with("--") => {
                     anyhow::bail!("unexpected double dash argument: {}", arg)
                 }
@@ -73,13 +102,29 @@ impl Args {
                         }
                     }
                 }
-                arg => args.files.push(parse_file(arg)),
+                arg if arg.starts_with('+') => {
+                    match arg[1..].parse::<usize>() {
+                        Ok(n) => line_number = n.saturating_sub(1),
+                        _ => insert_file_with_position(arg),
+                    };
+                }
+                arg => insert_file_with_position(arg),
             }
         }
 
         // push the remaining args, if any to the files
         for arg in argv {
-            args.files.push(parse_file(&arg));
+            insert_file_with_position(&arg);
+        }
+
+        if line_number != 0 {
+            if let Some(first_position) = args
+                .files
+                .first_mut()
+                .and_then(|(_, positions)| positions.first_mut())
+            {
+                first_position.row = line_number;
+            }
         }
 
         Ok(args)
@@ -101,7 +146,7 @@ pub(crate) fn parse_file(s: &str) -> (PathBuf, Position) {
 ///
 /// Does not validate if file.rs is a file or directory.
 fn split_path_row_col(s: &str) -> Option<(PathBuf, Position)> {
-    let mut s = s.rsplitn(3, ':');
+    let mut s = s.trim_end_matches(':').rsplitn(3, ':');
     let col: usize = s.next()?.parse().ok()?;
     let row: usize = s.next()?.parse().ok()?;
     let path = s.next()?.into();
@@ -113,7 +158,7 @@ fn split_path_row_col(s: &str) -> Option<(PathBuf, Position)> {
 ///
 /// Does not validate if file.rs is a file or directory.
 fn split_path_row(s: &str) -> Option<(PathBuf, Position)> {
-    let (path, row) = s.rsplit_once(':')?;
+    let (path, row) = s.trim_end_matches(':').rsplit_once(':')?;
     let row: usize = row.parse().ok()?;
     let path = path.into();
     let pos = Position::new(row.saturating_sub(1), 0);

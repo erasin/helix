@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::process::Command;
 
-const VERSION: &str = include_str!("../VERSION");
+const MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
+const MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
+const PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
 fn main() {
     let git_hash = Command::new("git")
@@ -10,11 +12,23 @@ fn main() {
         .output()
         .ok()
         .filter(|output| output.status.success())
-        .and_then(|x| String::from_utf8(x.stdout).ok());
+        .and_then(|x| String::from_utf8(x.stdout).ok())
+        .or_else(|| option_env!("HELIX_NIX_BUILD_REV").map(|s| s.to_string()));
 
+    let minor = if MINOR.len() == 1 {
+        // Print single-digit months in '0M' format
+        format!("0{MINOR}")
+    } else {
+        MINOR.to_string()
+    };
+    let calver = if PATCH == "0" {
+        format!("{MAJOR}.{minor}")
+    } else {
+        format!("{MAJOR}.{minor}.{PATCH}")
+    };
     let version: Cow<_> = match &git_hash {
-        Some(git_hash) => format!("{} ({})", VERSION, &git_hash[..8]).into(),
-        None => VERSION.into(),
+        Some(git_hash) => format!("{} ({})", calver, &git_hash[..8]).into(),
+        None => calver.into(),
     };
 
     println!(
@@ -22,7 +36,6 @@ fn main() {
         std::env::var("TARGET").unwrap()
     );
 
-    println!("cargo:rerun-if-changed=../VERSION");
     println!("cargo:rustc-env=VERSION_AND_GIT_HASH={}", version);
 
     if git_hash.is_none() {
@@ -40,6 +53,7 @@ fn main() {
         .ok()
         .filter(|output| output.status.success())
         .and_then(|x| String::from_utf8(x.stdout).ok())
+        .map(|x| x.trim().to_string())
     else {
         return;
     };
@@ -57,6 +71,7 @@ fn main() {
         .ok()
         .filter(|output| output.status.success())
         .and_then(|x| String::from_utf8(x.stdout).ok())
+        .map(|x| x.trim().to_string())
     else {
         return;
     };

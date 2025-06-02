@@ -1,13 +1,12 @@
 pub mod config;
 pub mod grammar;
 
+use helix_stdx::{env::current_working_dir, path};
+
 use etcetera::base_strategy::{choose_base_strategy, BaseStrategy};
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
 
 pub const VERSION_AND_GIT_HASH: &str = env!("VERSION_AND_GIT_HASH");
-
-static CWD: RwLock<Option<PathBuf>> = RwLock::new(None);
 
 static RUNTIME_DIRS: once_cell::sync::Lazy<Vec<PathBuf>> =
     once_cell::sync::Lazy::new(prioritize_runtime_dirs);
@@ -15,31 +14,6 @@ static RUNTIME_DIRS: once_cell::sync::Lazy<Vec<PathBuf>> =
 static CONFIG_FILE: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
 
 static LOG_FILE: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
-
-// Get the current working directory.
-// This information is managed internally as the call to std::env::current_dir
-// might fail if the cwd has been deleted.
-pub fn current_working_dir() -> PathBuf {
-    if let Some(path) = &*CWD.read().unwrap() {
-        return path.clone();
-    }
-
-    let path = std::env::current_dir()
-        .and_then(dunce::canonicalize)
-        .expect("Couldn't determine current working directory");
-    let mut cwd = CWD.write().unwrap();
-    *cwd = Some(path.clone());
-
-    path
-}
-
-pub fn set_current_working_dir(path: PathBuf) -> std::io::Result<()> {
-    let path = dunce::canonicalize(path)?;
-    std::env::set_current_dir(path.clone())?;
-    let mut cwd = CWD.write().unwrap();
-    *cwd = Some(path);
-    Ok(())
-}
 
 pub fn initialize_config_file(specified_file: Option<PathBuf>) {
     let config_file = specified_file.unwrap_or_else(default_config_file);
@@ -60,7 +34,8 @@ pub fn initialize_log_file(specified_file: Option<PathBuf>) {
 /// 1. sibling directory to `CARGO_MANIFEST_DIR` (if environment variable is set)
 /// 2. subdirectory of user config directory (always included)
 /// 3. `HELIX_RUNTIME` (if environment variable is set)
-/// 4. subdirectory of path to helix executable (always included)
+/// 4. `HELIX_DEFAULT_RUNTIME` (if environment variable is set *at build time*)
+/// 5. subdirectory of path to helix executable (always included)
 ///
 /// Postcondition: returns at least two paths (they might not exist).
 fn prioritize_runtime_dirs() -> Vec<PathBuf> {
@@ -78,6 +53,15 @@ fn prioritize_runtime_dirs() -> Vec<PathBuf> {
     rt_dirs.push(conf_rt_dir);
 
     if let Ok(dir) = std::env::var("HELIX_RUNTIME") {
+        let dir = path::expand_tilde(Path::new(&dir));
+        rt_dirs.push(path::normalize(dir));
+    }
+
+    // If this variable is set during build time, it will always be included
+    // in the lookup list. This allows downstream packagers to set a fallback
+    // directory to a location that is conventional on their distro so that they
+    // need not resort to a wrapper script or a global environment variable.
+    if let Some(dir) = std::option_env!("HELIX_DEFAULT_RUNTIME") {
         rt_dirs.push(dir.into());
     }
 
@@ -123,8 +107,8 @@ fn find_runtime_file(rel_path: &Path) -> Option<PathBuf> {
 /// The valid runtime directories are searched in priority order and the first
 /// file found to exist is returned, otherwise the path to the final attempt
 /// that failed.
-pub fn runtime_file(rel_path: &Path) -> PathBuf {
-    find_runtime_file(rel_path).unwrap_or_else(|| {
+pub fn runtime_file(rel_path: impl AsRef<Path>) -> PathBuf {
+    find_runtime_file(rel_path.as_ref()).unwrap_or_else(|| {
         RUNTIME_DIRS
             .last()
             .map(|dir| dir.join(rel_path))
@@ -142,7 +126,7 @@ pub fn config_dir() -> PathBuf {
 
 pub fn cache_dir() -> PathBuf {
     // TODO: allow env var override
-    let strategy = choose_base_strategy().expect("Unable to find the config directory!");
+    let strategy = choose_base_strategy().expect("Unable to find the cache directory!");
     let mut path = strategy.cache_dir();
     path.push("helix");
     path
@@ -174,17 +158,36 @@ pub fn default_log_file() -> PathBuf {
 
 /// Merge two TOML documents, merging values from `right` onto `left`
 ///
-/// When an array exists in both `left` and `right`, `right`'s array is
-/// used. When a table exists in both `left` and `right`, the merged table
-/// consists of all keys in `left`'s table unioned with all keys in `right`
-/// with the values of `right` being merged recursively onto values of
-/// `left`.
+/// `merge_depth` sets the nesting depth up to which values are merged instead
+/// of overridden.
 ///
-/// `merge_toplevel_arrays` controls whether a top-level array in the TOML
-/// document is merged instead of overridden. This is useful for TOML
-/// documents that use a top-level array of values like the `languages.toml`,
-/// where one usually wants to override or add to the array instead of
-/// replacing it altogether.
+/// When a table exists in both `left` and `right`, the merged table consists of
+/// all keys in `left`'s table unioned with all keys in `right` with the values
+/// of `right` being merged recursively onto values of `left`.
+///
+/// `crate::merge_toml_values(a, b, 3)` combines, for example:
+///
+/// b:
+/// ```toml
+/// [[language]]
+/// name = "toml"
+/// language-server = { command = "taplo", args = ["lsp", "stdio"] }
+/// ```
+/// a:
+/// ```toml
+/// [[language]]
+/// language-server = { command = "/usr/bin/taplo" }
+/// ```
+///
+/// into:
+/// ```toml
+/// [[language]]
+/// name = "toml"
+/// language-server = { command = "/usr/bin/taplo" }
+/// ```
+///
+/// thus it overrides the third depth-level of b with values of a if they exist,
+/// but otherwise merges their values
 pub fn merge_toml_values(left: toml::Value, right: toml::Value, merge_depth: usize) -> toml::Value {
     use toml::Value;
 
@@ -194,11 +197,6 @@ pub fn merge_toml_values(left: toml::Value, right: toml::Value, merge_depth: usi
 
     match (left, right) {
         (Value::Array(mut left_items), Value::Array(right_items)) => {
-            // The top-level arrays should be merged but nested arrays should
-            // act as overrides. For the `languages.toml` config, this means
-            // that you can specify a sub-set of languages in an overriding
-            // `languages.toml` but that nested arrays like Language Server
-            // arguments are replaced instead of merged.
             if merge_depth > 0 {
                 left_items.reserve(right_items.len());
                 for rvalue in right_items {
@@ -245,13 +243,17 @@ pub fn merge_toml_values(left: toml::Value, right: toml::Value, merge_depth: usi
 /// Used as a ceiling dir for LSP root resolution, the filepicker and potentially as a future filewatching root
 ///
 /// This function starts searching the FS upward from the CWD
-/// and returns the first directory that contains either `.git` or `.helix`.
+/// and returns the first directory that contains either `.git`, `.svn`, `.jj` or `.helix`.
 /// If no workspace was found returns (CWD, true).
 /// Otherwise (workspace, false) is returned
 pub fn find_workspace() -> (PathBuf, bool) {
     let current_dir = current_working_dir();
     for ancestor in current_dir.ancestors() {
-        if ancestor.join(".git").exists() || ancestor.join(".helix").exists() {
+        if ancestor.join(".git").exists()
+            || ancestor.join(".svn").exists()
+            || ancestor.join(".jj").exists()
+            || ancestor.join(".helix").exists()
+        {
             return (ancestor.to_owned(), false);
         }
     }
@@ -275,20 +277,8 @@ fn ensure_parent_dir(path: &Path) {
 mod merge_toml_tests {
     use std::str;
 
-    use super::{current_working_dir, merge_toml_values, set_current_working_dir};
+    use super::merge_toml_values;
     use toml::Value;
-
-    #[test]
-    fn current_dir_is_set() {
-        let new_path = dunce::canonicalize(std::env::temp_dir()).unwrap();
-        let cwd = current_working_dir();
-        assert_ne!(cwd, new_path);
-
-        set_current_working_dir(new_path.clone()).expect("Couldn't set new path");
-
-        let cwd = current_working_dir();
-        assert_eq!(cwd, new_path);
-    }
 
     #[test]
     fn language_toml_map_merges() {

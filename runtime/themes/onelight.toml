@@ -17,12 +17,12 @@
 
 "constant" = { fg = "cyan", modifiers = ["bold"] }
 "constant.builtin" = { fg = "deep-purple" }
-"constant.builtin.boolean" = { fg = "purple" }
+"constant.builtin.boolean" = { fg = "purple" , modifiers = ["bold"]}
 "constant.character" = { fg = "green" }
-"constant.character.escape" = { fg = "brown" }
-"constant.numeric" = { fg = "brown" }
-"constant.numeric.integer" = { fg = "brown" }
-"constant.numeric.float" = { fg = "brown" }
+"constant.character.escape" = { fg = "brown" , modifiers = ["bold"]}
+"constant.numeric" = { fg = "brown" , modifiers = ["bold"]}
+"constant.numeric.integer" = { fg = "brown" , modifiers = ["bold"]}
+"constant.numeric.float" = { fg = "brown" , modifiers = ["bold"]}
 
 "string" = { fg = "green" }
 "string.regexp" = { fg = "purple" }
@@ -91,13 +91,14 @@
 "markup.quote" = { fg = "grey" }
 "markup.raw" = { fg = "brown" }
 "markup.raw.inline" = { fg = "green" }
-"markup.raw.block" = { fg = "grey" }
+"markup.raw.block" = { fg = "brown" }
 
 "diff" = { fg = "red" }
 "diff.plus" = { fg = "green" }
 "diff.minus" = { fg = "red" }
 "diff.delta" = { fg = "cyan" }
 "diff.delta.moved" = { fg = "cyan" }
+"diff.delta.conflict" = {fg = "blue"}
 
 "ui.background" = { bg = "white" }
 "ui.background.separator" = { bg = "white" }
@@ -133,15 +134,17 @@
 "ui.text.focus" = { fg = "red", bg = "grey-300", modifiers = ["bold"] }
 "ui.text.inactive" = { fg = "grey" }
 "ui.text.info" = { fg = "black" }
+"ui.text.directory" = { fg = "blue", underline = { style = "line" } }
 
 "ui.virtual" = { fg = "grey-500" }
 "ui.virtual.ruler" = { bg = "grey-200" }
 "ui.virtual.wrap" = { fg = "grey-500" }
-"ui.virtual.whitespace" = { fg = "grey-300" }
+"ui.virtual.whitespace" = { fg = "grey-400" }
 "ui.virtual.indent-guide" = { fg = "grey-500" }
 "ui.virtual.inlay-hint" = { fg = "grey-500" }
 "ui.virtual.inlay-hint.parameter" = { fg = "grey-500", modifiers = ["italic"] }
 "ui.virtual.inlay-hint.type" = { fg = "grey-500" }
+"ui.virtual.jump-label" = { fg = "black", bg = "grey-200", modifiers = ["bold" ] }
 
 "ui.menu" = { fg = "black", bg = "grey-300" }
 "ui.menu.selected" = { fg = "white", bg = "light-blue" }
@@ -158,15 +161,22 @@
 
 "ui.highlight" = { bg = "grey-300" }
 
+"ui.picker.header" = { fg = "purple"}
+"ui.picker.header.column.active" = { fg = "blue"}
+
 "diagnostic.info" = { underline = { color = "blue", style = "dotted" } }
 "diagnostic.hint" = { underline = { color = "green", style = "dashed" } }
 "diagnostic.warning" = { underline = { color = "yellow", style = "curl" } }
 "diagnostic.error" = { underline = { color = "red", style = "curl" } }
+"diagnostic.unnecessary" = { modifiers = ["dim"] }
+"diagnostic.deprecated" = { modifiers = ["crossed_out"] }
 
 "info" = { fg = "blue", modifiers = ["bold"] }
 "hint" = { fg = "green", modifiers = ["bold"] }
 "warning" = { fg = "yellow", modifiers = ["bold"] }
 "error" = { fg = "red", modifiers = ["bold"] }
+
+"tabstop" = { modifiers = ["italic"], bg = "grey-300" }
 
 [palette]
 white = "#FAFAFA"

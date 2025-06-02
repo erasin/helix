@@ -18,7 +18,7 @@
 
 ![Screenshot](./screenshot.png)
 
-A Kakoune / Neovim inspired editor, written in Rust.
+A [Kakoune](https://github.com/mawww/kakoune) / [Neovim](https://github.com/neovim/neovim) inspired editor, written in Rust.
 
 The editing model is very heavily based on Kakoune; during development I found
 myself agreeing with most of Kakoune's design decisions.
@@ -37,8 +37,8 @@ All shortcuts/keymaps can be found [in the documentation on the website](https:/
 - Built-in language server support
 - Smart, incremental syntax highlighting and code editing via tree-sitter
 
-It's a terminal-based editor first, but I'd like to explore a custom renderer
-(similar to Emacs) in wgpu or skulpin.
+Although it's primarily a terminal-based editor, I am interested in exploring
+a custom renderer (similar to Emacs) using wgpu or skulpin.
 
 Note: Only certain languages have indentation definitions at the moment. Check
 `runtime/queries/<lang>/` for `indents.scm`.
@@ -47,7 +47,7 @@ Note: Only certain languages have indentation definitions at the moment. Check
 
 [Installation documentation](https://docs.helix-editor.com/install.html).
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/helix.svg)](https://repology.org/project/helix/versions)
+[![Packaging status](https://repology.org/badge/vertical-allrepos/helix-editor.svg?exclude_unsupported=1)](https://repology.org/project/helix-editor/versions)
 
 # Contributing
 

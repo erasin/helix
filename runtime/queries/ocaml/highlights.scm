@@ -1,3 +1,25 @@
+; Punctuation
+;------------
+
+"%" @punctuation.special
+
+["(" ")" "[" "]" "{" "}" "[|" "|]" "[<" "[>"] @punctuation.bracket
+
+[
+  "," "." ";" ":" "=" "|" "~" "?" "+" "-" "!" ">" "&"
+  "->" ";;" ":>" "+=" ":=" ".."
+] @punctuation.delimiter
+
+(object_type ["<" ">"] @punctuation.bracket)
+
+(attribute ["[@" "]"] @punctuation.special)
+(item_attribute ["[@@" "]"] @punctuation.special)
+(floating_attribute ["[@@@" "]"] @punctuation.special)
+(extension ["[%" "]"] @punctuation.special)
+(item_extension ["[%%" "]"] @punctuation.special)
+(quoted_extension ["{%" "}"] @punctuation.special)
+(quoted_item_extension ["{%%" "}"] @punctuation.special)
+
 ; Modules
 ;--------
 
@@ -6,9 +28,21 @@
 ; Types
 ;------
 
+(
+  (type_constructor) @type.builtin
+  (#match? @type.builtin "^(int|char|bytes|string|float|bool|unit|exn|array|list|option|int32|int64|nativeint|format6|lazy_t)$")
+)
+
 [(class_name) (class_type_name) (type_constructor)] @type
 
 [(constructor_name) (tag)] @constructor
+
+; Variables
+;----------
+
+[(value_name) (type_variable)] @variable
+
+(value_pattern) @variable.parameter
 
 ; Functions
 ;----------
@@ -27,21 +61,21 @@
 
 (method_name) @function.method
 
-; Variables
-;----------
-
-(value_pattern) @variable.parameter
-
 ; Application
 ;------------
 
+(
+  (value_name) @function.builtin
+  (#match? @function.builtin "^(raise(_notrace)?|failwith|invalid_arg)$")
+)
+
 (infix_expression
   left: (value_path (value_name) @function)
-  (infix_operator) @operator
+  operator: (concat_operator) @operator
   (#eq? @operator "@@"))
 
 (infix_expression
-  (infix_operator) @operator
+  operator: (rel_operator) @operator
   right: (value_path (value_name) @function)
   (#eq? @operator "|>"))
 
@@ -56,105 +90,62 @@
 ; Constants
 ;----------
 
-[(boolean) (unit)] @constant
+(boolean) @constant.builtin.boolean
 
-[(number) (signed_number)] @constant.numeric.integer
+[(number) (signed_number)] @constant.numeric
 
-(character) @constant.character
-
-(string) @string
+[(string) (character)] @string
 
 (quoted_string "{" @string "}" @string) @string
 
 (escape_sequence) @constant.character.escape
 
-[
-  (conversion_specification)
-  (pretty_printing_indication)
-] @punctuation.special
-
-; Keywords
-;---------
-
-[
-  "and" "as" "assert" "begin" "class" "constraint"
-  "end" "external" "in"
-  "inherit" "initializer" "lazy" "let" "match" "method" "module"
-  "mutable" "new" "nonrec" "object" "of" "private" "rec" "sig" "struct"
-  "type" "val" "virtual" "when" "with"
-] @keyword
-
-["fun" "function" "functor"] @keyword.function
-
-["if" "then" "else"] @keyword.control.conditional
-
-["exception" "try"] @keyword.control.exception
-
-["include" "open"] @keyword.control.import
-
-["for" "to" "downto" "while" "do" "done"] @keyword.control.repeat
-
-; Macros
-;-------
-
-(attribute ["[@" "]"] @attribute)
-(item_attribute ["[@@" "]"] @attribute)
-(floating_attribute ["[@@@" "]"] @attribute)
-(extension ["[%" "]"] @function.macro)
-(item_extension ["[%%" "]"] @function.macro)
-(quoted_extension ["{%" "}"] @function.macro)
-(quoted_item_extension ["{%%" "}"] @function.macro)
-"%" @function.macro
-
-["(" ")" "[" "]" "{" "}" "[|" "|]" "[<" "[>"] @punctuation.bracket
-
-(object_type ["<" ">"] @punctuation.bracket)
-
-[
-  "," "." ";" ":" "=" "|" "~" "?" "+" "-" "!" ">" "&"
-  "->" ";;" ":>" "+=" ":=" ".."
-] @punctuation.delimiter
+(conversion_specification) @string.special
 
 ; Operators
 ;----------
 
+["*" "#" "::" "<-"] @operator
+
 [
   (prefix_operator)
   (sign_operator)
-  (infix_operator)
+  (pow_operator)
+  (mult_operator)
+  (add_operator)
+  (concat_operator)
+  (rel_operator)
+  (and_operator)
+  (or_operator)
+  (assign_operator)
   (hash_operator)
   (indexing_operator)
   (let_operator)
-  (and_operator)
+  (let_and_operator)
   (match_operator)
 ] @operator
 
 (match_expression (match_operator) @keyword)
 
-(value_definition [(let_operator) (and_operator)] @keyword)
+(value_definition [(let_operator) (let_and_operator)] @keyword)
 
-;; TODO: this is an error now
-;(prefix_operator "!" @operator)
+; Keywords
+;---------
 
-(infix_operator ["&" "+" "-" "=" ">" "|" "%"] @operator)
-
-(signed_number ["+" "-"] @operator)
-
-["*" "#" "::" "<-"] @operator
+[
+  "and" "as" "assert" "begin" "class" "constraint" "do" "done" "downto" "else"
+  "end" "exception" "external" "for" "fun" "function" "functor" "if" "in"
+  "include" "inherit" "initializer" "lazy" "let" "match" "method" "module"
+  "mutable" "new" "nonrec" "object" "of" "open" "private" "rec" "sig" "struct"
+  "then" "to" "try" "type" "val" "virtual" "when" "while" "with"
+] @keyword
 
 ; Attributes
 ;-----------
 
-(attribute_id) @variable.other.member
+(attribute_id) @tag
 
 ; Comments
 ;---------
 
 [(comment) (line_number_directive) (directive) (shebang)] @comment
-
-(ERROR) @error
-
-; Blanket highlights
-; ------------------
-
-[(value_name) (type_variable)] @variable

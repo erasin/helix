@@ -4,6 +4,7 @@ use helix_core::unicode::width::UnicodeWidthStr;
 use unicode_segmentation::UnicodeSegmentation;
 
 const NBSP: &str = "\u{00a0}";
+const NNBSP: &str = "\u{202f}";
 
 /// A state machine to pack styled symbols into lines.
 /// Cannot implement it as Iterator since it yields slices of the internal buffer (need streaming
@@ -38,7 +39,7 @@ impl<'a, 'b> WordWrapper<'a, 'b> {
     }
 }
 
-impl<'a, 'b> LineComposer<'a> for WordWrapper<'a, 'b> {
+impl<'a> LineComposer<'a> for WordWrapper<'a, '_> {
     fn next_line(&mut self) -> Option<(&[StyledGrapheme<'a>], u16)> {
         if self.max_line_width == 0 {
             return None;
@@ -58,7 +59,8 @@ impl<'a, 'b> LineComposer<'a> for WordWrapper<'a, 'b> {
         let mut symbols_exhausted = true;
         for StyledGrapheme { symbol, style } in &mut self.symbols {
             symbols_exhausted = false;
-            let symbol_whitespace = symbol.chars().all(&char::is_whitespace) && symbol != NBSP;
+            let symbol_whitespace =
+                symbol.chars().all(&char::is_whitespace) && symbol != NBSP && symbol != NNBSP;
 
             // Ignore characters wider that the total max width.
             if symbol.width() as u16 > self.max_line_width
@@ -150,7 +152,7 @@ impl<'a, 'b> LineTruncator<'a, 'b> {
     }
 }
 
-impl<'a, 'b> LineComposer<'a> for LineTruncator<'a, 'b> {
+impl<'a> LineComposer<'a> for LineTruncator<'a, '_> {
     fn next_line(&mut self) -> Option<(&[StyledGrapheme<'a>], u16)> {
         if self.max_line_width == 0 {
             return None;
@@ -491,6 +493,20 @@ mod test {
 
         // Ensure that if the character was a regular space, it would be wrapped differently.
         let text_space = text.replace('\u{00a0}', " ");
+        let (word_wrapper_space, _) =
+            run_composer(Composer::WordWrapper { trim: true }, &text_space, width);
+        assert_eq!(word_wrapper_space, vec!["AAAAAAAAAAAAAAA AAAA", "AAA",]);
+    }
+
+    #[test]
+    fn line_composer_word_wrapper_nnbsp() {
+        let width = 20;
+        let text = "AAAAAAAAAAAAAAA AAAA\u{202f}AAA";
+        let (word_wrapper, _) = run_composer(Composer::WordWrapper { trim: true }, text, width);
+        assert_eq!(word_wrapper, vec!["AAAAAAAAAAAAAAA", "AAAA\u{202f}AAA",]);
+
+        // Ensure that if the character was a regular space, it would be wrapped differently.
+        let text_space = text.replace('\u{202f}', " ");
         let (word_wrapper_space, _) =
             run_composer(Composer::WordWrapper { trim: true }, &text_space, width);
         assert_eq!(word_wrapper_space, vec!["AAAAAAAAAAAAAAA AAAA", "AAA",]);

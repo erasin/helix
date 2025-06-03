@@ -603,9 +603,9 @@ impl MappableCommand {
         extend_to_word, "Extend to a two-character label",
         goto_next_tabstop, "Goto next snippet placeholder",
         goto_prev_tabstop, "Goto next snippet placeholder",
+        blame_line, "Show blame for the current line",
         open_or_focus_explorer, "Open or focus explorer",
         reveal_current_file, "Reveal current file in explorer",
-        blame_line, "Show blame for the current line",
     );
 }
 

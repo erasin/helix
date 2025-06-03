@@ -432,8 +432,10 @@ impl Explorer {
                 ..area
             },
         }
-        .clip_bottom(1);
-        // .clip_bottom(cx.editor.config().commandline as u16);
+        // .clip_bottom(2);
+        // NOTE: with hide commandline
+        .clip_bottom(cx.editor.config().commandline as u16);
+
         let background = cx.editor.theme.get("ui.background");
         surface.clear_with(side_area, background);
 
@@ -464,6 +466,7 @@ impl Explorer {
                 ExplorerPosition::Left => area.clip_right(1),
                 ExplorerPosition::Right => area.clip_left(1),
             };
+
             surface.clear_with(area, statusline);
 
             let title_style = cx.editor.theme.get("ui.text");
@@ -476,7 +479,11 @@ impl Explorer {
                 area.x,
                 area.y,
                 if self.is_focus() {
-                    " EXPLORER: press ? for help"
+                    if !self.tree.prompt().is_some() {
+                        " EXPLORER: press ? for help"
+                    } else {
+                        "Search:"
+                    }
                 } else {
                     " EXPLORER"
                 },

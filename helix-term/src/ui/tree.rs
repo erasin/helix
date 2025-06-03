@@ -791,10 +791,11 @@ fn render_tree<T: TreeViewItem>(
 ) -> Vec<RenderedLine> {
     let indent = if level > 0 {
         let indicator = if tree.item().is_parent() {
+            // TODO: ICON V2
             if tree.is_opened {
-                "⏷"
+                ""
             } else {
-                "⏵"
+                ""
             }
         } else {
             " "
@@ -838,7 +839,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         }
 
         let ancestor_style = {
-            let style = cx.editor.theme.get("ui.selection");
+            let style = cx.editor.theme.get("ui.text.directory");
             let fg = cx.editor.theme.get("ui.text").fg;
             match (style.fg, fg) {
                 (None, Some(fg)) => style.fg(fg),
@@ -860,10 +861,14 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             );
 
             let style = if line.selected {
-                style.add_modifier(Modifier::REVERSED)
+                cx.editor
+                    .theme
+                    .get("ui.text.focus")
+                    .add_modifier(Modifier::REVERSED)
             } else {
                 style
             };
+
             let x = area.x.saturating_add(indent_len);
             surface.set_stringn(
                 x,

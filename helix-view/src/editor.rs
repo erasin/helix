@@ -749,6 +749,7 @@ impl Display for StatusLineElement {
             Spacer => "spacer",
             VersionControl => "version-control",
             Register => "register",
+            WordCount => "word-count",
         };
         write!(f, "{element}")
     }

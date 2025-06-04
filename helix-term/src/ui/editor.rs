@@ -25,7 +25,9 @@ use helix_core::{
 use helix_view::{
     annotations::diagnostics::DiagnosticFilter,
     document::{Mode, SCRATCH_BUFFER_NAME},
-    editor::{CompleteAction, CursorShapeConfig, InlineBlameConfig, InlineBlameShow, ExplorerPosition},
+    editor::{
+        CompleteAction, CursorShapeConfig, ExplorerPosition, InlineBlameConfig, InlineBlameShow,
+    },
     graphics::{Color, CursorKind, Modifier, Rect, Style},
     icons::ICONS,
     input::{KeyEvent, MouseButton, MouseEvent, MouseEventKind},
@@ -1584,7 +1586,8 @@ impl Component for EditorView {
             area.clip_top(1)
         } else {
             area
-        };
+        }
+        .clip_bottom(config.commandline as u16); // -1 for commandline
 
         let editor_area = if let Some(explorer) = &self.explorer {
             let explorer_column_width = if explorer.is_opened() {

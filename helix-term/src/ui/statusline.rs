@@ -178,18 +178,6 @@ fn statusline_style(context: &RenderContext, scope: &str) -> Style {
     }
 }
 
-fn statusline_style(context: &RenderContext, scope: &str) -> Style {
-    let scope = format!("ui.statusline.{scope}");
-    let visible = context.focused;
-    let config = context.editor.config();
-
-    if visible && config.color_modes {
-        context.editor.theme.get(&scope)
-    } else {
-        Style::default()
-    }
-}
-
 fn render_mode<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,

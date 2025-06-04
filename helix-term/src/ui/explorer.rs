@@ -432,9 +432,9 @@ impl Explorer {
                 ..area
             },
         }
-        // .clip_bottom(2);
+        // .clip_bottom(1);
         // NOTE: with hide commandline
-        .clip_bottom(cx.editor.config().commandline as u16);
+        .clip_bottom(1 + cx.editor.config().commandline as u16);
 
         let background = cx.editor.theme.get("ui.background");
         surface.clear_with(side_area, background);

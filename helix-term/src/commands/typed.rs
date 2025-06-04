@@ -3530,28 +3530,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         },
     },
     TypableCommand {
-        name: "lang-config-open",
-        aliases: &[],
-        doc: "Open the user languages.toml file.",
-        fun: open_lang_config,
-        completer: CommandCompleter::none(),
-        signature: Signature {
-            positionals: (0, Some(0)),
-            ..Signature::DEFAULT
-        },
-    },
-    TypableCommand {
-        name: "lang-config-open-workspace",
-        aliases: &[],
-        doc: "Open the workspace languages.toml file.",
-        fun: open_workspace_lang_config,
-        completer: CommandCompleter::none(),
-        signature: Signature {
-            positionals: (0, Some(0)),
-            ..Signature::DEFAULT
-        },
-    },
-    TypableCommand {
         name: "log-open",
         aliases: &[],
         doc: "Open the helix log file.",

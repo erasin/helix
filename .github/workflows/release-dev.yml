@@ -1,21 +1,13 @@
-name: Release
+name: Dev-Release
 on:
   push:
     tags:
-    - '[0-9]+.[0-9]+'
-    - '[0-9]+.[0-9]+.[0-9]+'
-    branches:
-    - 'patch/ci-release-*'
-  pull_request:
-    paths:
-    - '.github/workflows/release.yml'
+    - 'dev.[0-9]+.[0-9]+.[0-9]+'
+
+# 该文件是利用github 编译自己的编译版本
 
 env:
-  # Preview mode: Publishes the build output as a CI artifact instead of creating
-  # a release, allowing for manual inspection of the output. This mode is
-  # activated if the CI run was triggered by events other than pushed tags, or
-  # if the repository is a fork.
-  preview: ${{ !startsWith(github.ref, 'refs/tags/') || github.repository != 'helix-editor/helix' }}
+  BIN_NAME: hx-lsp
 
 jobs:
   fetch-grammars:
@@ -284,7 +276,7 @@ jobs:
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
-        if: env.preview == 'false'
+        if: github.ref_type == 'tag'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/*
@@ -294,7 +286,6 @@ jobs:
       
       - name: Upload binaries as artifact
         uses: actions/upload-artifact@v4
-        if: env.preview == 'true'
         with:
           name: release
           path: dist/*

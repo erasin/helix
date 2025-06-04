@@ -723,6 +723,37 @@ impl Display for StatusLineElement {
     }
 }
 
+impl Display for StatusLineElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use StatusLineElement::*;
+        let element = match self {
+            Mode => "mode",
+            Spinner => "spinner",
+            FileBaseName => "file-base-name",
+            FileName => "file-name",
+            FileAbsolutePath => "file-absolute-path",
+            FileModificationIndicator => "file-modification-indicator",
+            ReadOnlyIndicator => "read-only-indicator",
+            FileEncoding => "file-encoding",
+            FileLineEnding => "file-line-ending",
+            FileIndentStyle => "file-indent-style",
+            FileType => "file-type",
+            Diagnostics => "diagnostics",
+            WorkspaceDiagnostics => "workspace-diagnostics",
+            Selections => "selections",
+            PrimarySelectionLength => "primary-selection-length",
+            Position => "position",
+            Separator => "separator",
+            PositionPercentage => "position-percentage",
+            TotalLineNumbers => "total-line-numbers",
+            Spacer => "spacer",
+            VersionControl => "version-control",
+            Register => "register",
+        };
+        write!(f, "{element}")
+    }
+}
+
 // Cursor shape is read and used on every rendered frame and so needs
 // to be fast. Therefore we avoid a hashmap and use an enum indexed array.
 #[derive(Debug, Clone, PartialEq, Eq)]

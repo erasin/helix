@@ -209,18 +209,8 @@ impl View {
             .language_config()
             .and_then(|config| config.text_width)
             .unwrap_or(config.text_width) as u16;
-        let soft_wrap_at_text_width = doc
-            .language_config()
-            .and_then(|config| {
-                config
-                    .soft_wrap
-                    .as_ref()
-                    .and_then(|soft_wrap| soft_wrap.wrap_at_text_width)
-            })
-            .or(config.soft_wrap.wrap_at_text_width)
-            .unwrap_or(false);
 
-        let space_width = if soft_wrap_at_text_width && self_width.gt(&text_width) {
+        let space_width = if config.zen_mode && self_width.gt(&text_width) {
             (self_width - text_width) / 2
         } else {
             0

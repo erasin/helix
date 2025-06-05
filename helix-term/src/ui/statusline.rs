@@ -167,11 +167,15 @@ where
 }
 
 fn statusline_style(context: &RenderContext, scope: &str) -> Style {
-    let scope = format!("ui.statusline.{scope}");
-    let visible = context.focused;
+    let scope = if context.focused {
+        format!("ui.statusline.{scope}")
+    } else {
+        format!("ui.statusline.inactive.{scope}")
+    };
+
     let config = context.editor.config();
 
-    if visible && config.color_modes {
+    if config.color_modes {
         context.editor.theme.get(&scope)
     } else {
         Style::default()

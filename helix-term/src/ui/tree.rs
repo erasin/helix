@@ -360,11 +360,9 @@ impl<T: TreeViewItem> TreeView<T> {
     pub fn reveal_item(&mut self, segments: Vec<String>) -> Result<()> {
         // Expand the tree
         let root = self.tree.item.name();
-        segments.iter().fold(
-            Ok(&mut self.tree),
-            |current_tree, segment| match current_tree {
-                Err(err) => Err(err),
-                Ok(current_tree) => {
+        segments.iter().try_fold(
+            &mut self.tree,
+            |current_tree, segment| {
                     match current_tree
                         .children
                         .iter_mut()
@@ -381,7 +379,6 @@ impl<T: TreeViewItem> TreeView<T> {
                             segments.join("/"),
                         ))),
                     }
-                }
             },
         )?;
 
@@ -954,7 +951,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
                     remaining_lines: lines,
                 };
             }
-            if let Some(line) = lines.get(0) {
+            if let Some(line) = lines.first() {
                 if line.selected {
                     return RetainAncestorResult {
                         skipped_ancestors: vec![],
@@ -972,15 +969,15 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
 
             let skipped_ancestors = skipped
                 .iter()
-                .cloned()
                 .filter(|line| line.is_ancestor_of_current_item)
+                .cloned()
                 .collect::<Vec<_>>();
 
             let result = retain_ancestors(remaining.to_vec(), skipped_ancestors.len());
             RetainAncestorResult {
                 skipped_ancestors: skipped_ancestors
                     .into_iter()
-                    .chain(result.skipped_ancestors.into_iter())
+                    .chain(result.skipped_ancestors)
                     .collect(),
                 remaining_lines: result.remaining_lines,
             }
@@ -1210,10 +1207,7 @@ fn index_elems<T>(parent_index: usize, elems: Vec<Tree<T>>) -> Vec<Tree<T>> {
                     is_opened: elem.is_opened,
                     parent_index: Some(parent_index),
                 };
-                (
-                    current_index,
-                    trees.into_iter().chain(vec![tree].into_iter()).collect(),
-                )
+                (current_index, trees.into_iter().chain(vec![tree]).collect())
             })
     }
     index_elems(parent_index + 1, elems, parent_index).1

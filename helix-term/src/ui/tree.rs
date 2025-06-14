@@ -798,7 +798,7 @@ fn render_tree<T: TreeViewItem>(
             let icons = ICONS.load();
             // let text = if let Some(icon) = icons.mime()
             if let Some(icon) = icons.mime().get(Some(&tree.item.name().into()), None) {
-                &format!("{}", icon.glyph())
+                &icon.glyph().to_string()
             } else {
                 " "
             }

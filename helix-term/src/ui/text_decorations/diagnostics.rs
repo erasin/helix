@@ -67,8 +67,8 @@ impl<'a> InlineDiagnostics<'a> {
 }
 
 const BL_CORNER: &str = "┘";
-const TR_CORNER: &str = "┌";
-const BR_CORNER: &str = "└";
+const TR_CORNER: &str = "╭"; // ┌
+const BR_CORNER: &str = "╰"; // └
 const STACK: &str = "├";
 const MULTI: &str = "┴";
 const HOR_BAR: &str = "─";

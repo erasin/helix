@@ -4,7 +4,7 @@ use anyhow::Result;
 use helix_view::{
     icons::ICONS,
     input::{MouseButton, MouseEvent, MouseEventKind},
-    theme::Modifier,
+    theme::{Modifier, Style},
 };
 
 use crate::{
@@ -16,7 +16,7 @@ use helix_view::{
     graphics::Rect,
     input::{Event, KeyEvent},
 };
-use tui::buffer::Buffer as Surface;
+use tui::{buffer::Buffer as Surface, text::Span};
 
 use super::Prompt;
 
@@ -507,11 +507,11 @@ impl<T: TreeViewItem> TreeView<T> {
 
         match kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                log::info!("mouse-{} {} {}",row,self.winline,self.selected);
+                log::info!("mouse-{} {} {}", row, self.winline, self.selected);
                 let cow = row as isize - self.winline as isize;
                 let selected = if cow > 0 {
                     self.selected.saturating_add(cow as usize)
-                }else{
+                } else {
                     self.selected.saturating_sub(cow.unsigned_abs())
                 };
 
@@ -526,9 +526,9 @@ impl<T: TreeViewItem> TreeView<T> {
             }
             MouseEventKind::ScrollUp => {
                 self.pre_render = Some(Box::new(|tree, area| {
-                    if area.height as usize > tree.winline  {
-                       tree.winline = tree.winline.saturating_add(1);
-                    }else{
+                    if area.height as usize > tree.winline {
+                        tree.winline = tree.winline.saturating_add(1);
+                    } else {
                         tree.move_up(1);
                         // tree.regenerate_index();
                     }
@@ -538,8 +538,8 @@ impl<T: TreeViewItem> TreeView<T> {
             MouseEventKind::ScrollDown => {
                 self.pre_render = Some(Box::new(|tree, _area| {
                     if tree.winline > 0 {
-                       tree.winline = tree.winline.saturating_sub(1);
-                    }else{
+                        tree.winline = tree.winline.saturating_sub(1);
+                    } else {
                         tree.move_down(1);
                         // tree.regenerate_index();
                     }
@@ -859,9 +859,9 @@ fn render_tree<T: TreeViewItem>(
         let indicator = if tree.item().is_parent() {
             // TODO: ICON V2
             if tree.is_opened {
-                "⏵"
+                ""
             } else {
-                "⏷"
+                ""
             }
         } else {
             let icons = ICONS.load();

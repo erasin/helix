@@ -507,6 +507,7 @@ impl<T: TreeViewItem> TreeView<T> {
 
         match kind {
             MouseEventKind::Down(MouseButton::Left) => {
+                log::info!("mouse-{} {} {}",row,self.winline,self.selected);
                 let cow = row as isize - self.winline as isize;
                 let selected = if cow > 0 {
                     self.selected.saturating_add(cow as usize)
@@ -517,7 +518,7 @@ impl<T: TreeViewItem> TreeView<T> {
                 if self.selected == selected {
                     self.on_enter(cxt, params, self.selected)
                         .unwrap_or_default();
-                    self.regenerate_index();
+                    // self.regenerate_index();
                 } else {
                     self.set_selected(selected);
                 }
@@ -525,16 +526,22 @@ impl<T: TreeViewItem> TreeView<T> {
             }
             MouseEventKind::ScrollUp => {
                 self.pre_render = Some(Box::new(|tree, area| {
-                    if area.height as usize > tree.winline + 1 {
-                        tree.winline += 2;
+                    if area.height as usize > tree.winline  {
+                       tree.winline = tree.winline.saturating_add(1);
+                    }else{
+                        tree.move_up(1);
+                        // tree.regenerate_index();
                     }
                 }));
                 EventResult::Consumed(None)
             }
             MouseEventKind::ScrollDown => {
                 self.pre_render = Some(Box::new(|tree, _area| {
-                    if tree.winline > 1 {
-                        tree.winline -= 2;
+                    if tree.winline > 0 {
+                       tree.winline = tree.winline.saturating_sub(1);
+                    }else{
+                        tree.move_down(1);
+                        // tree.regenerate_index();
                     }
                 }));
                 EventResult::Consumed(None)
@@ -852,9 +859,9 @@ fn render_tree<T: TreeViewItem>(
         let indicator = if tree.item().is_parent() {
             // TODO: ICON V2
             if tree.is_opened {
-                ""
+                "⏵"
             } else {
-                ""
+                "⏷"
             }
         } else {
             let icons = ICONS.load();

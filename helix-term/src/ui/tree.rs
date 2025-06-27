@@ -1,7 +1,11 @@
 use std::cmp::Ordering;
 
 use anyhow::Result;
-use helix_view::{icons::ICONS, theme::Modifier};
+use helix_view::{
+    icons::ICONS,
+    input::{MouseButton, MouseEvent, MouseEventKind},
+    theme::Modifier,
+};
 
 use crate::{
     compositor::{Component, Context, EventResult},
@@ -478,6 +482,64 @@ impl<T: TreeViewItem> TreeView<T> {
             Some(prompt)
         } else {
             None
+        }
+    }
+
+    pub fn handle_mouse_event(
+        &mut self,
+        event: &MouseEvent,
+        cxt: &mut Context,
+        params: &mut T::Params,
+    ) -> EventResult {
+        // let config = cxt.editor.config();
+        let MouseEvent {
+            kind,
+            row,
+            column,
+            // modifiers,
+            ..
+        } = *event;
+
+        // NOTE 左侧
+        if self.max_len < column as usize {
+            return EventResult::Ignored(None);
+        }
+
+        match kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let cow = row as isize - self.winline as isize;
+                let selected = if cow > 0 {
+                    self.selected.saturating_add(cow as usize)
+                }else{
+                    self.selected.saturating_sub(cow.unsigned_abs())
+                };
+
+                if self.selected == selected {
+                    self.on_enter(cxt, params, self.selected)
+                        .unwrap_or_default();
+                    self.regenerate_index();
+                } else {
+                    self.set_selected(selected);
+                }
+                EventResult::Consumed(None)
+            }
+            MouseEventKind::ScrollUp => {
+                self.pre_render = Some(Box::new(|tree, area| {
+                    if area.height as usize > tree.winline + 1 {
+                        tree.winline += 2;
+                    }
+                }));
+                EventResult::Consumed(None)
+            }
+            MouseEventKind::ScrollDown => {
+                self.pre_render = Some(Box::new(|tree, _area| {
+                    if tree.winline > 1 {
+                        tree.winline -= 2;
+                    }
+                }));
+                EventResult::Consumed(None)
+            }
+            _ => EventResult::Ignored(None),
         }
     }
 }
@@ -1057,6 +1119,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         let key_event = match event {
             Event::Key(event) => event,
             Event::Resize(..) => return EventResult::Consumed(None),
+            // Event::Mouse(event) => return self.handle_mouse_event(event, cx),
             _ => return EventResult::Ignored(None),
         };
         (|| -> Result<EventResult> {

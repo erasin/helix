@@ -689,8 +689,15 @@ impl Component for Explorer {
         if self.tree.prompting() {
             return self.tree.handle_event(event, cx, &mut self.state);
         }
+
         let key_event = match event {
             Event::Key(event) => event,
+            Event::Mouse(event) => {
+                if self.is_opened() {
+                    return self.tree.handle_mouse_event(event, cx, &mut self.state);
+                }
+                return EventResult::Ignored(None);
+            }
             Event::Resize(..) => return EventResult::Consumed(None),
             _ => return EventResult::Ignored(None),
         };

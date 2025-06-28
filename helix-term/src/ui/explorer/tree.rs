@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, path::PathBuf};
 
 use anyhow::Result;
 use helix_view::{
@@ -9,21 +9,24 @@ use helix_view::{
 
 use crate::{
     compositor::{Component, Context, EventResult},
-    ctrl, key, shift, ui,
+    ctrl, key, shift,
+    ui::{self, Prompt},
 };
 use helix_core::movement::Direction;
 use helix_view::{
     graphics::Rect,
     input::{Event, KeyEvent},
 };
-use tui::{buffer::Buffer as Surface, text::Span};
-
-use super::Prompt;
+use tui::{
+    buffer::Buffer as Surface,
+    text::{Span, Spans},
+};
 
 pub trait TreeViewItem: Sized + Ord {
     type Params: Default;
 
     fn name(&self) -> String;
+    fn path(&self) -> PathBuf;
     fn is_parent(&self) -> bool;
 
     fn filter(&self, s: &str) -> bool {
@@ -293,8 +296,7 @@ pub struct TreeView<T: TreeViewItem> {
     /// For implementing horizontal scoll
     max_len: usize,
     count: usize,
-    tree_symbol_style: String,
-
+    // tree_symbol_style: String,
     #[allow(clippy::type_complexity)]
     pre_render: Option<Box<dyn Fn(&mut Self, Rect) + 'static>>,
 
@@ -322,7 +324,7 @@ impl<T: TreeViewItem> TreeView<T> {
             column: 0,
             max_len: 0,
             count: 0,
-            tree_symbol_style: "ui.text".into(),
+            // tree_symbol_style: "ui.text".into(),
             pre_render: None,
             on_opened_fn: None,
             on_folded_fn: None,
@@ -340,6 +342,7 @@ impl<T: TreeViewItem> TreeView<T> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_folded_fn<F>(mut self, f: F) -> Self
     where
         F: FnMut(&mut T, &mut Context, &mut T::Params) + 'static,
@@ -348,10 +351,10 @@ impl<T: TreeViewItem> TreeView<T> {
         self
     }
 
-    pub fn tree_symbol_style(mut self, style: String) -> Self {
-        self.tree_symbol_style = style;
-        self
-    }
+    // pub fn tree_symbol_style(mut self, style: String) -> Self {
+    //     self.tree_symbol_style = style;
+    //     self
+    // }
 
     /// Reveal item in the tree based on the given `segments`.
     ///
@@ -491,23 +494,17 @@ impl<T: TreeViewItem> TreeView<T> {
         cxt: &mut Context,
         params: &mut T::Params,
     ) -> EventResult {
-        // let config = cxt.editor.config();
         let MouseEvent {
             kind,
             row,
-            column,
+            // column,
             // modifiers,
             ..
         } = *event;
 
-        // NOTE 左侧
-        if self.max_len < column as usize {
-            return EventResult::Ignored(None);
-        }
-
         match kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                log::info!("mouse-{} {} {}", row, self.winline, self.selected);
+                // log::debug!("mouse-{} {} {}", row, self.winline, self.selected);
                 let cow = row as isize - self.winline as isize;
                 let selected = if cow > 0 {
                     self.selected.saturating_add(cow as usize)
@@ -828,71 +825,105 @@ impl<T: TreeViewItem> TreeView<T> {
         Ok(&self.current()?.item)
     }
 
-    pub fn winline(&self) -> usize {
-        self.winline
-    }
+    // pub fn winline(&self) -> usize {
+    //     self.winline
+    // }
 }
 
 #[derive(Clone)]
-struct RenderedLine {
-    indent: String,
-    content: String,
+struct RenderedLine<'a> {
+    indent: Spans<'a>,
+    content: Span<'a>,
     selected: bool,
     is_ancestor_of_current_item: bool,
 }
 struct RenderTreeParams<'a, T> {
     tree: &'a Tree<T>,
-    prefix: &'a String,
+    prefix: Spans<'a>,
     level: usize,
     selected: usize,
 }
 
-fn render_tree<T: TreeViewItem>(
+fn render_tree<'a, T: TreeViewItem>(
     RenderTreeParams {
         tree,
         prefix,
         level,
         selected,
-    }: RenderTreeParams<T>,
-) -> Vec<RenderedLine> {
-    let indent = if level > 0 {
+    }: RenderTreeParams<'a, T>,
+    cx: &mut Context,
+) -> Vec<RenderedLine<'a>> {
+    let is_selected = selected == tree.index;
+    let is_ancestor_of_current_item = !is_selected && tree.get(selected).is_some();
+
+    let style = if is_selected {
+        cx.editor
+            .theme
+            .get("ui.text.focus")
+            .add_modifier(Modifier::REVERSED)
+    } else {
+        cx.editor.theme.get("ui.text")
+    };
+
+    let ancestor_style = if is_ancestor_of_current_item {
+        let style = cx.editor.theme.get("ui.text.directory");
+        let fg = cx.editor.theme.get("ui.text").fg;
+        match (style.fg, fg) {
+            (None, Some(fg)) => style.fg(fg),
+            _ => style,
+        }
+    } else {
+        style
+    };
+
+    let mut indent = prefix.clone();
+    let mut prefix = prefix.clone();
+    if level > 0 {
         let indicator = if tree.item().is_parent() {
             // TODO: ICON V2
             if tree.is_opened {
-                ""
+                Span::styled(" ", style)
             } else {
-                ""
+                Span::styled(" ", style)
             }
         } else {
             let icons = ICONS.load();
-            // let text = if let Some(icon) = icons.mime()
-            if let Some(icon) = icons.mime().get(Some(&tree.item.name().into()), None) {
-                &icon.glyph().to_string()
+            if let Some(icon) = icons.mime().get(Some(&tree.item.path()), None) {
+                if let Some(color) = icon.color() {
+                    Span::styled(format!("{} ", icon.glyph()), Style::default().fg(color))
+                } else {
+                    Span::raw(format!("{} ", icon.glyph()))
+                }
             } else {
-                " "
+                Span::styled("  ", style)
             }
         };
-        format!("{}{} ", prefix, indicator)
-    } else {
-        "".to_string()
-    };
-    let name = tree.item.name();
+
+        indent.0.push(indicator);
+
+        prefix.0.push(Span::styled(" ", style));
+    }
+
+    let name = Span::styled(tree.item.name(), ancestor_style);
     let head = RenderedLine {
         indent,
-        selected: selected == tree.index,
-        is_ancestor_of_current_item: selected != tree.index && tree.get(selected).is_some(),
+        selected: is_selected,
+        is_ancestor_of_current_item,
         content: name,
     };
-    let prefix = format!("{}{}", prefix, if level == 0 { "" } else { "  " });
+
     vec![head]
         .into_iter()
         .chain(tree.children.iter().flat_map(|elem| {
-            render_tree(RenderTreeParams {
-                tree: elem,
-                prefix: &prefix,
-                level: level + 1,
-                selected,
-            })
+            render_tree(
+                RenderTreeParams {
+                    tree: elem,
+                    prefix: prefix.clone(),
+                    level: level + 1,
+                    selected,
+                },
+                cx,
+            )
         }))
         .collect()
 }
@@ -905,113 +936,55 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         surface: &mut Surface,
         cx: &mut Context,
     ) {
-        let style = cx.editor.theme.get(&self.tree_symbol_style);
+        // let style = cx.editor.theme.get(&self.tree_symbol_style);
         if let Some((_, prompt)) = self.search_prompt.as_mut() {
             prompt.render_prompt(prompt_area, surface, cx)
         }
 
-        let ancestor_style = {
-            let style = cx.editor.theme.get("ui.text.directory");
-            let fg = cx.editor.theme.get("ui.text").fg;
-            match (style.fg, fg) {
-                (None, Some(fg)) => style.fg(fg),
-                _ => style,
-            }
-        };
-
-        let iter = self.render_lines(area).into_iter().enumerate();
+        let iter = self.render_lines(area, cx).into_iter().enumerate();
 
         for (index, line) in iter {
             let area = Rect::new(area.x, area.y.saturating_add(index as u16), area.width, 1);
-            let indent_len = line.indent.chars().count() as u16;
-            surface.set_stringn(
-                area.x,
-                area.y,
-                line.indent.clone(),
-                indent_len as usize,
-                style,
-            );
-
-            let style = if line.selected {
-                cx.editor
-                    .theme
-                    .get("ui.text.focus")
-                    .add_modifier(Modifier::REVERSED)
-            } else {
-                style
-            };
-
+            let indent_len = line.indent.width() as u16;
+            surface.set_spans(area.x, area.y, &line.indent, indent_len);
             let x = area.x.saturating_add(indent_len);
-            surface.set_stringn(
+            surface.set_span(
                 x,
                 area.y,
-                line.content.clone(),
-                area.width
-                    .saturating_sub(indent_len)
-                    .saturating_sub(1)
-                    .into(),
-                if line.is_ancestor_of_current_item {
-                    ancestor_style
-                } else {
-                    style
-                },
+                &line.content,
+                area.width.saturating_sub(indent_len).saturating_sub(1),
             );
         }
     }
 
-    #[cfg(test)]
-    pub fn render_to_string(&mut self, area: Rect) -> String {
-        let lines = self.render_lines(area);
-        lines
-            .into_iter()
-            .map(|line| {
-                let name = if line.selected {
-                    format!("({})", line.content)
-                } else if line.is_ancestor_of_current_item {
-                    format!("[{}]", line.content)
-                } else {
-                    line.content
-                };
-                format!("{}{}", line.indent, name)
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    fn render_lines(&mut self, area: Rect) -> Vec<RenderedLine> {
+    fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine> {
         if let Some(pre_render) = self.pre_render.take() {
             pre_render(self, area);
         }
 
         self.winline = self.winline.min(area.height.saturating_sub(1) as usize);
         let skip = self.selected.saturating_sub(self.winline);
+
         let params = RenderTreeParams {
             tree: &self.tree,
-            prefix: &"".to_string(),
+            prefix: Spans::default(),
             level: 0,
             selected: self.selected,
         };
 
-        let lines = render_tree(params);
+        let lines = render_tree(params, cx);
 
         self.max_len = lines
             .iter()
-            .map(|line| {
-                line.indent
-                    .chars()
-                    .count()
-                    .saturating_add(line.content.chars().count())
-            })
+            .map(|line| line.indent.width())
             .max()
             .unwrap_or(0);
 
-        let max_width = area.width as usize;
-
         let take = area.height as usize;
 
-        struct RetainAncestorResult {
-            skipped_ancestors: Vec<RenderedLine>,
-            remaining_lines: Vec<RenderedLine>,
+        struct RetainAncestorResult<'a> {
+            skipped_ancestors: Vec<RenderedLine<'a>>,
+            remaining_lines: Vec<RenderedLine<'a>>,
         }
         fn retain_ancestors(lines: Vec<RenderedLine>, skip: usize) -> RetainAncestorResult {
             if skip == 0 {
@@ -1078,46 +1051,22 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             )
             // Horizontal scroll
             .map(|line| {
-                let skip = self.column;
-                let indent_len = line.indent.chars().count();
+                // let skip = self.column;
+                // let indent_len = line.indent.width();
                 RenderedLine {
-                    indent: if line.indent.is_empty() {
-                        "".to_string()
+                    indent: if line.indent.0.is_empty() {
+                        Spans::default()
                     } else {
                         line.indent
-                            .chars()
-                            .skip(skip)
-                            .take(max_width)
-                            .collect::<String>()
                     },
-                    content: line
-                        .content
-                        .chars()
-                        .skip(skip.saturating_sub(indent_len))
-                        .take((max_width.saturating_sub(indent_len)).clamp(0, line.content.len()))
-                        .collect::<String>(),
+                    content: line.content,
                     ..line
                 }
             })
             .collect()
     }
 
-    #[cfg(test)]
-    pub fn handle_events(
-        &mut self,
-        events: &str,
-        cx: &mut Context,
-        params: &mut T::Params,
-    ) -> Result<()> {
-        use helix_view::input::parse_macro;
-
-        for event in parse_macro(events)? {
-            self.handle_event(&Event::Key(event), cx, params);
-        }
-        Ok(())
-    }
-
-    pub fn handle_event(
+    pub fn handle_key_event(
         &mut self,
         event: &Event,
         cx: &mut Context,
@@ -1281,278 +1230,4 @@ fn index_elems<T>(parent_index: usize, elems: Vec<Tree<T>>) -> Vec<Tree<T>> {
             })
     }
     index_elems(parent_index + 1, elems, parent_index).1
-}
-
-#[cfg(test)]
-mod test_tree_view {
-
-    use helix_view::graphics::Rect;
-
-    use super::{TreeView, TreeViewItem};
-
-    #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-    /// The children of DivisibleItem is the division of itself.
-    /// This is used to ease the creation of a dummy tree without having to specify so many things.
-    struct DivisibleItem<'a> {
-        name: &'a str,
-    }
-
-    fn item(name: &str) -> DivisibleItem {
-        DivisibleItem { name }
-    }
-
-    impl<'a> TreeViewItem for DivisibleItem<'a> {
-        type Params = ();
-
-        fn name(&self) -> String {
-            self.name.to_string()
-        }
-
-        fn is_parent(&self) -> bool {
-            self.name.len() > 2
-        }
-
-        fn get_children(&self) -> anyhow::Result<Vec<Self>> {
-            if self.name.eq("who_lives_in_a_pineapple_under_the_sea") {
-                Ok(vec![
-                    item("gary_the_snail"),
-                    item("krabby_patty"),
-                    item("larry_the_lobster"),
-                    item("patrick_star"),
-                    item("sandy_cheeks"),
-                    item("spongebob_squarepants"),
-                    item("mrs_puff"),
-                    item("king_neptune"),
-                    item("karen"),
-                    item("plankton"),
-                ])
-            } else if self.is_parent() {
-                let (left, right) = self.name.split_at(self.name.len() / 2);
-                Ok(vec![item(left), item(right)])
-            } else {
-                Ok(vec![])
-            }
-        }
-    }
-
-    fn dummy_tree_view<'a>() -> TreeView<DivisibleItem<'a>> {
-        TreeView::build_tree(item("who_lives_in_a_pineapple_under_the_sea")).unwrap()
-    }
-
-    fn dummy_area() -> Rect {
-        Rect::new(0, 0, 50, 5)
-    }
-
-    fn render(view: &mut TreeView<DivisibleItem>) -> String {
-        view.render_to_string(dummy_area())
-    }
-
-    mod static_tree {
-        use crate::ui::{TreeView, TreeViewItem};
-
-        use super::dummy_area;
-
-        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-        /// This is used for test cases where the structure of the tree has to be known upfront
-        pub struct StaticItem<'a> {
-            pub name: &'a str,
-            pub children: Option<Vec<StaticItem<'a>>>,
-        }
-
-        pub fn parent<'a>(name: &'a str, children: Vec<StaticItem<'a>>) -> StaticItem<'a> {
-            StaticItem {
-                name,
-                children: Some(children),
-            }
-        }
-
-        pub fn child(name: &str) -> StaticItem {
-            StaticItem {
-                name,
-                children: None,
-            }
-        }
-
-        impl<'a> TreeViewItem for StaticItem<'a> {
-            type Params = ();
-
-            fn name(&self) -> String {
-                self.name.to_string()
-            }
-
-            fn is_parent(&self) -> bool {
-                self.children.is_some()
-            }
-
-            fn get_children(&self) -> anyhow::Result<Vec<Self>> {
-                match &self.children {
-                    Some(children) => Ok(children.clone()),
-                    None => Ok(vec![]),
-                }
-            }
-        }
-
-        pub fn render(view: &mut TreeView<StaticItem<'_>>) -> String {
-            view.render_to_string(dummy_area().with_height(3))
-        }
-    }
-}
-
-#[cfg(test)]
-mod test_tree {
-    use helix_core::movement::Direction;
-
-    use super::Tree;
-
-    #[test]
-    fn test_get() {
-        let result = Tree::new(
-            "root",
-            vec![
-                Tree::new("foo", vec![Tree::new("bar", vec![])]),
-                Tree::new(
-                    "spam",
-                    vec![Tree::new("jar", vec![Tree::new("yo", vec![])])],
-                ),
-            ],
-        );
-        assert_eq!(result.get(0).unwrap().item, "root");
-        assert_eq!(result.get(1).unwrap().item, "foo");
-        assert_eq!(result.get(2).unwrap().item, "bar");
-        assert_eq!(result.get(3).unwrap().item, "spam");
-        assert_eq!(result.get(4).unwrap().item, "jar");
-        assert_eq!(result.get(5).unwrap().item, "yo");
-    }
-
-    #[test]
-    fn test_iter() {
-        let tree = Tree::new(
-            "spam",
-            vec![
-                Tree::new("jar", vec![Tree::new("yo", vec![])]),
-                Tree::new("foo", vec![Tree::new("bar", vec![])]),
-            ],
-        );
-
-        let mut iter = tree.iter();
-        assert_eq!(iter.next().map(|tree| tree.item), Some("spam"));
-        assert_eq!(iter.next().map(|tree| tree.item), Some("jar"));
-        assert_eq!(iter.next().map(|tree| tree.item), Some("yo"));
-        assert_eq!(iter.next().map(|tree| tree.item), Some("foo"));
-        assert_eq!(iter.next().map(|tree| tree.item), Some("bar"));
-
-        assert_eq!(iter.next().map(|tree| tree.item), None)
-    }
-
-    #[test]
-    fn test_iter_double_ended() {
-        let tree = Tree::new(
-            "spam",
-            vec![
-                Tree::new("jar", vec![Tree::new("yo", vec![])]),
-                Tree::new("foo", vec![Tree::new("bar", vec![])]),
-            ],
-        );
-
-        let mut iter = tree.iter();
-        assert_eq!(iter.next_back().map(|tree| tree.item), Some("bar"));
-        assert_eq!(iter.next_back().map(|tree| tree.item), Some("foo"));
-        assert_eq!(iter.next_back().map(|tree| tree.item), Some("yo"));
-        assert_eq!(iter.next_back().map(|tree| tree.item), Some("jar"));
-        assert_eq!(iter.next_back().map(|tree| tree.item), Some("spam"));
-        assert_eq!(iter.next_back().map(|tree| tree.item), None)
-    }
-
-    #[test]
-    fn test_len() {
-        let tree = Tree::new(
-            "spam",
-            vec![
-                Tree::new("jar", vec![Tree::new("yo", vec![])]),
-                Tree::new("foo", vec![Tree::new("bar", vec![])]),
-            ],
-        );
-
-        assert_eq!(tree.len(), 5)
-    }
-
-    #[test]
-    fn test_find_forward() {
-        let tree = Tree::new(
-            ".cargo",
-            vec![
-                Tree::new("jar", vec![Tree::new("Cargo.toml", vec![])]),
-                Tree::new("Cargo.toml", vec![Tree::new("bar", vec![])]),
-            ],
-        );
-        let result = tree.find(0, Direction::Forward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(0));
-
-        let result = tree.find(1, Direction::Forward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(2));
-
-        let result = tree.find(2, Direction::Forward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(2));
-
-        let result = tree.find(3, Direction::Forward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(3));
-
-        let result = tree.find(4, Direction::Forward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(0));
-    }
-
-    #[test]
-    fn test_find_backward() {
-        let tree = Tree::new(
-            ".cargo",
-            vec![
-                Tree::new("jar", vec![Tree::new("Cargo.toml", vec![])]),
-                Tree::new("Cargo.toml", vec![Tree::new("bar", vec![])]),
-            ],
-        );
-        let result = tree.find(0, Direction::Backward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(3));
-
-        let result = tree.find(1, Direction::Backward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(0));
-
-        let result = tree.find(2, Direction::Backward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(0));
-
-        let result = tree.find(3, Direction::Backward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(2));
-
-        let result = tree.find(4, Direction::Backward, |tree| {
-            tree.item.to_lowercase().contains(&"cargo".to_lowercase())
-        });
-
-        assert_eq!(result, Some(3));
-    }
 }

@@ -1,4 +1,4 @@
-use super::{Prompt, TreeOp, TreeView, TreeViewItem};
+use super::Prompt;
 use crate::{
     compositor::{Component, Context, EventResult},
     ctrl, key, shift, ui,
@@ -10,16 +10,19 @@ use helix_view::{
     graphics::{CursorKind, Rect},
     info::Info,
     input::{Event, KeyEvent},
-    theme::{Modifier, Style},
+    theme::Style,
     Editor,
 };
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::{borrow::Cow, fs::DirEntry};
+use tree::{TreeOp, TreeView, TreeViewItem};
 use tui::{
     buffer::Buffer as Surface,
     widgets::{Block, Borders, Widget},
 };
+
+mod tree;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 enum FileType {
@@ -105,6 +108,10 @@ impl TreeViewItem for FileInfo {
         self.get_text().to_string()
     }
 
+    fn path(&self) -> PathBuf {
+        self.path.clone()
+    }
+
     fn is_parent(&self) -> bool {
         matches!(self.file_type, FileType::Folder | FileType::Root)
     }
@@ -137,6 +144,7 @@ struct State {
     open: bool,
     current_root: PathBuf,
     area_width: u16,
+    area: Rect,
 }
 
 impl State {
@@ -146,6 +154,7 @@ impl State {
             current_root,
             open: true,
             area_width: 0,
+            area: Rect::default(),
         }
     }
 }
@@ -434,63 +443,28 @@ impl Explorer {
         }
         // .clip_bottom(1);
         // NOTE: with hide commandline
-        .clip_bottom(1 + cx.editor.config().commandline as u16);
+        .clip_bottom(cx.editor.config().commandline as u16);
+
+        self.state.area = side_area;
 
         let background = cx.editor.theme.get("ui.background");
         surface.clear_with(side_area, background);
 
         let prompt_area = area.clip_top(side_area.height);
-
         let split_style = cx.editor.theme.get("ui.window");
-
         let list_area = match position {
             ExplorerPosition::Left => {
                 render_block(side_area.clip_left(1), surface, Borders::RIGHT, split_style)
-                    .clip_bottom(0)
             }
             ExplorerPosition::Right => {
                 render_block(side_area.clip_right(1), surface, Borders::LEFT, split_style)
-                    .clip_bottom(0)
             }
         };
-        self.render_tree(list_area, prompt_area, surface, cx);
+        // remove statusline
+        self.render_tree(list_area.clip_bottom(1), prompt_area, surface, cx);
 
-        {
-            let statusline = if self.is_focus() {
-                cx.editor.theme.get("ui.statusline")
-            } else {
-                cx.editor.theme.get("ui.statusline.inactive")
-            };
-            let area = side_area.clip_top(list_area.height);
-            let area = match position {
-                ExplorerPosition::Left => area.clip_right(1),
-                ExplorerPosition::Right => area.clip_left(1),
-            };
-
-            surface.clear_with(area, statusline);
-
-            let title_style = cx.editor.theme.get("ui.text");
-            let title_style = if self.is_focus() {
-                title_style.add_modifier(Modifier::BOLD)
-            } else {
-                title_style
-            };
-            surface.set_stringn(
-                area.x,
-                area.y,
-                if self.is_focus() {
-                    if self.tree.prompt().is_none() {
-                        " EXPLORER: press ? for help"
-                    } else {
-                        "Search:"
-                    }
-                } else {
-                    " EXPLORER"
-                },
-                area.width.into(),
-                title_style,
-            );
-        }
+        let status_area = list_area.clip_top(list_area.height - 1);
+        self.render_statusline(status_area, surface, cx);
 
         if self.is_focus() && self.show_help {
             let help_area = match position {
@@ -503,6 +477,32 @@ impl Explorer {
         if let Some((_, prompt)) = self.prompt.as_mut() {
             prompt.render_prompt(prompt_area, surface, cx)
         }
+    }
+
+    fn render_statusline(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
+        let style = if self.is_focus() {
+            cx.editor.theme.get("ui.statusline.explorer")
+        } else {
+            cx.editor.theme.get("ui.statusline.inactive.explorer")
+        };
+
+        surface.clear_with(area, style);
+
+        surface.set_stringn(
+            area.x,
+            area.y,
+            if self.is_focus() {
+                if self.tree.prompt().is_none() {
+                    " EXPLORER: Press ? for help"
+                } else {
+                    "Search:"
+                }
+            } else {
+                " EXPLORER"
+            },
+            area.width.into(),
+            style,
+        );
     }
 
     fn render_help(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
@@ -521,7 +521,7 @@ impl Explorer {
                 ("q", "Close"),
             ]
             .into_iter()
-            .chain(ui::tree::tree_view_help())
+            .chain(tree::tree_view_help())
             .collect::<Vec<_>>(),
         )
         .render(area, surface, cx)
@@ -687,15 +687,23 @@ impl Component for Explorer {
     /// Process input events, return true if handled.
     fn handle_event(&mut self, event: &Event, cx: &mut Context) -> EventResult {
         if self.tree.prompting() {
-            return self.tree.handle_event(event, cx, &mut self.state);
+            return self.tree.handle_key_event(event, cx, &mut self.state);
         }
 
         let key_event = match event {
             Event::Key(event) => event,
             Event::Mouse(event) => {
-                if self.is_opened() {
+                let config = &cx.editor.config().explorer;
+                log::debug!("mouse-{} {}", event.column, event.row);
+                let is_in_area = match config.position {
+                    ExplorerPosition::Left => event.column < self.state.area.width,
+                    ExplorerPosition::Right => event.column > self.state.area.x,
+                };
+                if self.is_opened() && is_in_area {
+                    self.focus();
                     return self.tree.handle_mouse_event(event, cx, &mut self.state);
                 }
+                self.unfocus();
                 return EventResult::Ignored(None);
             }
             Event::Resize(..) => return EventResult::Consumed(None),
@@ -727,7 +735,7 @@ impl Component for Explorer {
                 key!('+') | key!('=') => self.increase_size(),
                 _ => {
                     self.tree
-                        .handle_event(&Event::Key(*key_event), cx, &mut self.state);
+                        .handle_key_event(&Event::Key(*key_event), cx, &mut self.state);
                 }
             };
             Ok(())

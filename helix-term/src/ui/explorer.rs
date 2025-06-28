@@ -694,7 +694,6 @@ impl Component for Explorer {
             Event::Key(event) => event,
             Event::Mouse(event) => {
                 let config = &cx.editor.config().explorer;
-                log::debug!("mouse-{} {}", event.column, event.row);
                 let is_in_area = match config.position {
                     ExplorerPosition::Left => event.column < self.state.area.width,
                     ExplorerPosition::Right => event.column > self.state.area.x,

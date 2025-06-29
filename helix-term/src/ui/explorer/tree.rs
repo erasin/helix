@@ -522,12 +522,14 @@ impl<T: TreeViewItem> TreeView<T> {
                 EventResult::Consumed(None)
             }
             MouseEventKind::ScrollUp => {
-                // BUG 滚动处理，当顶部没有数据的时候，会出现 winline 向上情况
                 self.pre_render = Some(Box::new(|tree, area| {
-                    if area.height as usize - 3 > tree.winline {
-                        tree.winline = tree.winline.saturating_add(1);
-                    } else {
-                        tree.move_up(1);
+                    // 滚动处理,selected - wineline 来检测是否到了顶部
+                    if tree.selected.saturating_sub(tree.winline) > 3 {
+                        if area.height as usize - 3 > tree.winline {
+                            tree.winline = tree.winline.saturating_add(1);
+                        } else {
+                            tree.move_up(1);
+                        }
                     }
                 }));
                 EventResult::Consumed(None)

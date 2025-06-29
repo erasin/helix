@@ -420,6 +420,10 @@ impl Explorer {
 
         self.state.area_width = area.width;
 
+        // NOTE: with hide commandline
+        let commandline = cx.editor.config().commandline as u16;
+        let statusline = 1;
+
         let side_area = match position {
             ExplorerPosition::Left => Rect { width, ..area },
             ExplorerPosition::Right => Rect {
@@ -428,30 +432,38 @@ impl Explorer {
                 ..area
             },
         }
-        // .clip_bottom(1);
-        // NOTE: with hide commandline
-        .clip_bottom(cx.editor.config().commandline as u16);
+        .clip_bottom(commandline);
 
         self.state.area = side_area;
 
         let background = cx.editor.theme.get("ui.background");
         surface.clear_with(side_area, background);
 
-        let prompt_area = area.clip_top(side_area.height);
-        let split_style = cx.editor.theme.get("ui.window");
-        let list_area = match position {
-            ExplorerPosition::Left => {
-                render_block(side_area.clip_left(1), surface, Borders::RIGHT, split_style)
-            }
-            ExplorerPosition::Right => {
-                render_block(side_area.clip_right(1), surface, Borders::LEFT, split_style)
-            }
-        };
-        // remove statusline
-        self.render_tree(list_area.clip_bottom(1), prompt_area, surface, cx);
+        // NOTE - statusline if hide commandline for
+        let prompt_area = if commandline == 0 {
+            area.clip_top(side_area.height - statusline)
+        } else {
+            area.clip_top(side_area.height)
+        }
+        .with_height(statusline);
 
-        let status_area = list_area.clip_top(list_area.height - 1);
+        let split_style = cx.editor.theme.get("ui.window");
+        let border = match position {
+            ExplorerPosition::Left => Borders::RIGHT,
+            ExplorerPosition::Right => Borders::LEFT,
+        };
+
+        let list_area = render_block(side_area, surface, border, split_style);
+
+        let status_area = match position {
+            ExplorerPosition::Left => side_area.clip_right(1),
+            ExplorerPosition::Right => side_area.clip_left(1),
+        }
+        .clip_top(list_area.height - statusline)
+        .with_height(statusline);
+
         self.render_statusline(status_area, surface, cx);
+        self.render_tree(list_area, prompt_area, surface, cx);
 
         if self.is_focus() && self.show_help {
             let help_area = match position {

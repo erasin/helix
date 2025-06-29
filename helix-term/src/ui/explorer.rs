@@ -47,8 +47,8 @@ impl FileInfo {
 
     fn get_text(&self) -> Cow<'static, str> {
         let text = match self.file_type {
-            FileType::Root => self.path.display().to_string(),
-            FileType::File | FileType::Folder => self
+            // FileType::Root => self.path.display().to_string(),
+            FileType::Root | FileType::File | FileType::Folder => self
                 .path
                 .file_name()
                 .map_or("/".into(), |p| p.to_string_lossy().into_owned()),
@@ -188,19 +188,6 @@ impl Explorer {
             prompt: None,
             on_next_key: None,
             column_width: cx.editor.config().explorer.column_width as u16,
-        })
-    }
-
-    #[cfg(test)]
-    fn from_path(root: PathBuf, column_width: u16) -> Result<Self> {
-        Ok(Self {
-            tree: Self::new_tree_view(root.clone())?,
-            history: vec![],
-            show_help: false,
-            state: State::new(true, root),
-            prompt: None,
-            on_next_key: None,
-            column_width,
         })
     }
 

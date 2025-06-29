@@ -4,7 +4,7 @@ use anyhow::Result;
 use helix_view::{
     icons::ICONS,
     input::{MouseButton, MouseEvent, MouseEventKind},
-    theme::{Modifier, Style},
+    theme::Style,
 };
 
 use crate::{
@@ -366,7 +366,7 @@ impl<T: TreeViewItem> TreeView<T> {
     ///
     pub fn reveal_item(&mut self, segments: Vec<String>) -> Result<()> {
         // Expand the tree
-        let root = self.tree.item.name();
+        let root = self.tree.item.path().display().to_string();
         segments.iter().try_fold(
             &mut self.tree,
             |current_tree, segment| {
@@ -858,21 +858,13 @@ fn render_tree<'a, T: TreeViewItem>(
     let is_ancestor_of_current_item = !is_selected && tree.get(selected).is_some();
 
     let style = if is_selected {
-        cx.editor
-            .theme
-            .get("ui.text.focus")
-            .add_modifier(Modifier::REVERSED)
+        cx.editor.theme.get("ui.menu.selected")
     } else {
         cx.editor.theme.get("ui.text")
     };
 
     let ancestor_style = if is_ancestor_of_current_item {
-        let style = cx.editor.theme.get("ui.text.directory");
-        let fg = cx.editor.theme.get("ui.text").fg;
-        match (style.fg, fg) {
-            (None, Some(fg)) => style.fg(fg),
-            _ => style,
-        }
+        cx.editor.theme.get("ui.text.directory")
     } else {
         style
     };
@@ -937,25 +929,34 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         surface: &mut Surface,
         cx: &mut Context,
     ) {
-        // let style = cx.editor.theme.get(&self.tree_symbol_style);
         if let Some((_, prompt)) = self.search_prompt.as_mut() {
             prompt.render_prompt(prompt_area, surface, cx)
         }
 
-        let iter = self.render_lines(area, cx).into_iter().enumerate();
+        self.render_lines(area, cx)
+            .into_iter()
+            .enumerate()
+            .for_each(|(index, line)| {
+                let area = Rect {
+                    y: area.y.saturating_add(index as u16),
+                    height: 1,
+                    ..area
+                };
 
-        for (index, line) in iter {
-            let area = Rect::new(area.x, area.y.saturating_add(index as u16), area.width, 1);
-            let indent_len = line.indent.width() as u16;
-            surface.set_spans(area.x, area.y, &line.indent, indent_len);
-            let x = area.x.saturating_add(indent_len);
-            surface.set_span(
-                x,
-                area.y,
-                &line.content,
-                area.width.saturating_sub(indent_len).saturating_sub(1),
-            );
-        }
+                if line.selected {
+                    surface.clear_with(area, line.content.style);
+                }
+
+                let indent_len = line.indent.width() as u16;
+                surface.set_spans(area.x, area.y, &line.indent, indent_len);
+                let x = area.x.saturating_add(indent_len);
+                surface.set_span(
+                    x,
+                    area.y,
+                    &line.content,
+                    area.width.saturating_sub(indent_len).saturating_sub(1),
+                );
+            });
     }
 
     fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine> {

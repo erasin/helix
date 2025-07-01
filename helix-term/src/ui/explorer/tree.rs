@@ -882,7 +882,8 @@ fn render_tree<'a, T: TreeViewItem>(
         } else {
             let icons = ICONS.load();
             if let Some(icon) = icons.mime().get(Some(&tree.item.path()), None) {
-                if let Some(color) = icon.color() {
+                let icon_color = if is_selected { None } else { icon.color() };
+                if let Some(color) = icon_color {
                     Span::styled(format!("{} ", icon.glyph()), Style::default().fg(color))
                 } else {
                     Span::raw(format!("{} ", icon.glyph()))
@@ -969,7 +970,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
 
         let params = RenderTreeParams {
             tree: &self.tree,
-            prefix: Spans::default(),
+            prefix: Span::raw(" ").into(),
             level: 0,
             selected: self.selected,
         };

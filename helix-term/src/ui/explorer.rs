@@ -439,13 +439,7 @@ impl Explorer {
         let background = cx.editor.theme.get("ui.background");
         surface.clear_with(side_area, background);
 
-        // NOTE - statusline if hide commandline for
-        let prompt_area = if commandline == 0 {
-            area.clip_top(side_area.height - statusline)
-        } else {
-            area.clip_top(side_area.height)
-        }
-        .with_height(statusline);
+        let prompt_area = area.clip_top(area.height - 1);
 
         let split_style = cx.editor.theme.get("ui.window");
         let border = match position {
@@ -453,13 +447,14 @@ impl Explorer {
             ExplorerPosition::Right => Borders::LEFT,
         };
 
-        let list_area = render_block(side_area, surface, border, split_style);
+        let list_area =
+            render_block(side_area, surface, border, split_style).clip_bottom(statusline);
 
         let status_area = match position {
             ExplorerPosition::Left => side_area.clip_right(1),
             ExplorerPosition::Right => side_area.clip_left(1),
         }
-        .clip_top(list_area.height - statusline)
+        .clip_top(list_area.height)
         .with_height(statusline);
 
         self.render_statusline(status_area, surface, cx);

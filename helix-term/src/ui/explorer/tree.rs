@@ -854,6 +854,7 @@ fn render_tree<'a, T: TreeViewItem>(
     }: RenderTreeParams<'a, T>,
     cx: &mut Context,
 ) -> Vec<RenderedLine<'a>> {
+    let editor_config = cx.editor.config.load();
     let is_selected = selected == tree.index;
     let is_ancestor_of_current_item = !is_selected && tree.get(selected).is_some();
 
@@ -894,8 +895,11 @@ fn render_tree<'a, T: TreeViewItem>(
         };
 
         indent.0.push(indicator);
-
-        prefix.0.push(Span::styled(" ", style));
+        prefix.0.push(Span::styled(
+            editor_config.indent_guides.character.to_string(),
+            cx.editor.theme.get("ui.virtual.indent-guide"),
+        ));
+        prefix.0.push(Span::raw(" "));
     }
 
     let name = Span::styled(tree.item.name(), ancestor_style);

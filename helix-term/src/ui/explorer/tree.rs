@@ -854,7 +854,6 @@ fn render_tree<'a, T: TreeViewItem>(
     }: RenderTreeParams<'a, T>,
     cx: &mut Context,
 ) -> Vec<RenderedLine<'a>> {
-    let editor_config = cx.editor.config.load();
     let is_selected = selected == tree.index;
     let is_ancestor_of_current_item = !is_selected && tree.get(selected).is_some();
 
@@ -873,8 +872,8 @@ fn render_tree<'a, T: TreeViewItem>(
     let mut indent = prefix.clone();
     let mut prefix = prefix.clone();
     if level > 0 {
+        // TODO: ICON V2
         let indicator = if tree.item().is_parent() {
-            // TODO: ICON V2
             if tree.is_opened {
                 Span::styled(" ", style)
             } else {
@@ -893,6 +892,8 @@ fn render_tree<'a, T: TreeViewItem>(
                 Span::styled("  ", style)
             }
         };
+
+        let editor_config = cx.editor.config.load();
 
         indent.0.push(indicator);
         prefix.0.push(Span::styled(

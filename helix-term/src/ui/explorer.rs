@@ -696,8 +696,11 @@ impl Component for Explorer {
                         }
                     };
                 if self.is_opened() && is_in_area {
-                    self.focus();
-                    return self.tree.handle_mouse_event(event, cx, &mut self.state);
+                    let result = self.tree.handle_mouse_event(event, cx, &mut self.state);
+                    if let EventResult::Consumed(_) = result {
+                        self.focus();
+                    };
+                    return result;
                 }
                 self.unfocus();
                 return EventResult::Ignored(None);

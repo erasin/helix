@@ -52,6 +52,8 @@ pub struct LanguageConfiguration {
     pub block_comment_tokens: Option<Vec<BlockCommentToken>>,
     pub text_width: Option<usize>,
     pub soft_wrap: Option<SoftWrap>,
+    #[serde(default)]
+    pub zen_mode: bool,
 
     #[serde(default)]
     pub auto_format: bool,

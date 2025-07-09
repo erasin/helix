@@ -209,8 +209,12 @@ impl View {
             .language_config()
             .and_then(|config| config.text_width)
             .unwrap_or(config.text_width) as u16;
+        let zen_mode = doc
+            .language_config()
+            .map(|config| config.zen_mode)
+            .unwrap_or(config.zen_mode);
 
-        let space_width = if config.zen_mode && self_width.gt(&text_width) {
+        let space_width = if zen_mode && self_width.gt(&text_width) {
             (self_width - text_width) / 2
         } else {
             0

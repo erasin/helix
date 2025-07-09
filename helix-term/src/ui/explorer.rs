@@ -688,10 +688,13 @@ impl Component for Explorer {
             Event::Key(event) => event,
             Event::Mouse(event) => {
                 let config = &cx.editor.config().explorer;
-                let is_in_area = match config.position {
-                    ExplorerPosition::Left => event.column < self.state.area.width,
-                    ExplorerPosition::Right => event.column > self.state.area.x,
-                };
+                let is_in_area = event.column > self.state.area.x
+                    && match config.position {
+                        ExplorerPosition::Left => event.column < self.state.area.width,
+                        ExplorerPosition::Right => {
+                            event.column < self.state.area.width + self.state.area.x
+                        }
+                    };
                 if self.is_opened() && is_in_area {
                     self.focus();
                     return self.tree.handle_mouse_event(event, cx, &mut self.state);

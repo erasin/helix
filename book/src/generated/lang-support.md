@@ -104,7 +104,7 @@
 | hocon | ✓ | ✓ | ✓ |  |
 | hoon | ✓ |  |  |  |
 | hosts | ✓ |  |  |  |
-| html | ✓ |  |  | `vscode-html-language-server`, `superhtml` |
+| html | ✓ | ✓ |  | `vscode-html-language-server`, `superhtml` |
 | htmldjango | ✓ |  |  | `djlsp`, `vscode-html-language-server`, `superhtml` |
 | hurl | ✓ | ✓ | ✓ |  |
 | hyprlang | ✓ |  | ✓ | `hyprls` |
@@ -117,7 +117,10 @@
 | java | ✓ | ✓ | ✓ | `jdtls` |
 | javascript | ✓ | ✓ | ✓ | `typescript-language-server` |
 | jinja | ✓ |  |  |  |
+| jjconfig | ✓ | ✓ | ✓ | `taplo`, `tombi` |
 | jjdescription | ✓ |  |  |  |
+| jjrevset | ✓ |  |  |  |
+| jjtemplate | ✓ |  |  |  |
 | jq | ✓ | ✓ |  | `jq-lsp` |
 | jsdoc | ✓ |  |  |  |
 | json | ✓ | ✓ | ✓ | `vscode-json-language-server` |
@@ -271,7 +274,7 @@
 | wit | ✓ |  | ✓ |  |
 | wren | ✓ | ✓ | ✓ |  |
 | xit | ✓ |  |  |  |
-| xml | ✓ |  | ✓ |  |
+| xml | ✓ | ✓ | ✓ |  |
 | xtc | ✓ |  |  |  |
 | yaml | ✓ | ✓ | ✓ | `yaml-language-server`, `ansible-language-server` |
 | yara | ✓ |  |  | `yls` |

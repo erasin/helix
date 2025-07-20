@@ -183,7 +183,7 @@ impl Explorer {
         Ok(Self {
             tree: Self::new_tree_view(current_root.clone())?,
             history: vec![],
-            show_help: true,
+            show_help: false,
             state: State::new(true, current_root),
             prompt: None,
             on_next_key: None,

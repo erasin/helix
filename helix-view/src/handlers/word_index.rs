@@ -14,7 +14,7 @@ use parking_lot::RwLock;
 use tokio::{sync::mpsc, time::Instant};
 
 use crate::{
-    events::{DocumentDidChange, DocumentDidClose, DocumentDidOpen},
+    events::{ConfigDidChange, DocumentDidChange, DocumentDidClose, DocumentDidOpen},
     DocumentId,
 };
 
@@ -32,6 +32,9 @@ enum Event {
     Insert(Rope),
     Update(DocumentId, Change),
     Delete(DocumentId, Rope),
+    /// Clear the entire word index.
+    /// This is used to clear memory when the feature is turned off.
+    Clear,
 }
 
 #[derive(Debug)]
@@ -108,6 +111,7 @@ impl AsyncHook for Hook {
                 }
                 timeout
             }
+            Event::Clear => unreachable!("clear is sent to the worker directly"),
         }
     }
 
@@ -123,7 +127,7 @@ const MIN_WORD_GRAPHEMES: usize = 3;
 /// Maximum word length allowed (in chars)
 const MAX_WORD_LEN: usize = 50;
 
-type Word = helix_stdx::str::TinyBoxedStr;
+type Word = kstring::KString;
 
 #[derive(Debug, Default)]
 struct WordIndexInner {
@@ -141,16 +145,15 @@ impl WordIndexInner {
     }
 
     fn insert(&mut self, word: RopeSlice) {
-        assert!(word.len_chars() <= MAX_WORD_LEN);
-        // The word must be shorter than `TinyBoxedStr::MAX` because it is fewer than 50
-        // characters and characters take at most four bytes.
-        assert!(word.len_bytes() < Word::MAX_LEN);
-
         let word: Cow<str> = word.into();
         if let Some(rc) = self.words.get_mut(word.as_ref()) {
             *rc = rc.saturating_add(1);
         } else {
-            self.words.insert(word.try_into().unwrap(), 1);
+            let word = match word {
+                Cow::Owned(s) => Word::from_string(s),
+                Cow::Borrowed(s) => Word::from_ref(s),
+            };
+            self.words.insert(word, 1);
         }
     }
 
@@ -163,6 +166,10 @@ impl WordIndexInner {
             Some(n) => *n -= 1,
             None => (),
         }
+    }
+
+    fn clear(&mut self) {
+        std::mem::take(&mut self.words);
     }
 }
 
@@ -183,37 +190,35 @@ impl WordIndex {
     }
 
     fn add_document(&self, text: &Rope) {
-        let words: Vec<_> = words(text.slice(..)).collect();
         let mut inner = self.inner.write();
-        for word in words {
+        for word in words(text.slice(..)) {
             inner.insert(word);
         }
     }
 
     fn update_document(&self, old_text: &Rope, text: &Rope, changes: &ChangeSet) {
-        let mut inserted = Vec::new();
-        let mut removed = Vec::new();
+        let mut inner = self.inner.write();
         for (old_window, new_window) in changed_windows(old_text.slice(..), text.slice(..), changes)
         {
-            inserted.extend(words(new_window));
-            removed.extend(words(old_window));
-        }
-
-        let mut inner = self.inner.write();
-        for word in inserted {
-            inner.insert(word);
-        }
-        for word in removed {
-            inner.remove(word);
+            for word in words(new_window) {
+                inner.insert(word);
+            }
+            for word in words(old_window) {
+                inner.remove(word);
+            }
         }
     }
 
     fn remove_document(&self, text: &Rope) {
-        let words: Vec<_> = words(text.slice(..)).collect();
         let mut inner = self.inner.write();
-        for word in words {
+        for word in words(text.slice(..)) {
             inner.remove(word);
         }
+    }
+
+    fn clear(&self) {
+        let mut inner = self.inner.write();
+        inner.clear();
     }
 
     /// Coordinate the indexing of documents.
@@ -241,6 +246,9 @@ impl WordIndex {
                 }
                 Event::Delete(_doc, text) => {
                     this.remove_document(&text);
+                }
+                Event::Clear => {
+                    this.clear();
                 }
             })
             .await
@@ -317,7 +325,7 @@ fn changed_windows<'a>(
         let operation = operations.next()?;
         let old_start = old_pos;
         let new_start = new_pos;
-        let len = operation.len();
+        let len = operation.len_chars();
         match operation {
             Retain(_) => {
                 old_pos += len;
@@ -330,7 +338,7 @@ fn changed_windows<'a>(
 
         // Scan ahead until a `Retain` is found which would end a window.
         while let Some(o) = operations.next_if(|op| !matches!(op, Retain(n) if *n > MAX_WORD_LEN)) {
-            let len = o.len();
+            let len = o.len_chars();
             match o {
                 Retain(_) => {
                     old_pos += len;
@@ -358,7 +366,7 @@ fn is_changeset_significant(changes: &ChangeSet) -> bool {
     for operation in changes.changes() {
         match operation {
             Retain(_) => continue,
-            Delete(_) | Insert(_) => diff += operation.len(),
+            Delete(_) | Insert(_) => diff += operation.len_chars(),
         }
     }
 
@@ -402,6 +410,25 @@ pub(crate) fn register_hooks(handlers: &Handlers) {
                 Event::Delete(event.doc.id(), event.doc.text().clone()),
             );
         }
+        Ok(())
+    });
+
+    let coordinator = handlers.word_index.coordinator.clone();
+    register_hook!(move |event: &mut ConfigDidChange<'_>| {
+        // The feature has been turned off. Clear the index and reclaim any used memory.
+        if event.old.word_completion.enable && !event.new.word_completion.enable {
+            coordinator.send(Event::Clear).unwrap();
+        }
+
+        // The feature has been turned on. Index open documents.
+        if !event.old.word_completion.enable && event.new.word_completion.enable {
+            for doc in event.editor.documents() {
+                if doc.word_completion_enabled() {
+                    coordinator.send(Event::Insert(doc.text().clone())).unwrap();
+                }
+            }
+        }
+
         Ok(())
     });
 }
@@ -478,7 +505,5 @@ mod tests {
         assert_diff("one two three", "one three", ["two"], []);
         assert_diff("one two three", "one t{o three", ["two"], []);
         assert_diff("one foo three", "one fooo three", ["foo"], ["fooo"]);
-
-        // TODO: further testing. Consider setting the max word size smaller in tests.
     }
 }

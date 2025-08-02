@@ -162,6 +162,7 @@ where
         helix_view::editor::StatusLineElement::Spacer => render_spacer,
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
+        helix_view::editor::StatusLineElement::CurrentWorkingDirectory => render_cwd,
         helix_view::editor::StatusLineElement::WordCount => render_word_count,
     }
 }
@@ -667,4 +668,17 @@ where
             }
         },
     );
+}
+
+fn render_cwd<'a, F>(context: &mut RenderContext<'a>, write: F)
+where
+    F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
+{
+    let cwd = helix_stdx::env::current_working_dir();
+    let cwd = cwd
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    write(context, cwd.into())
 }

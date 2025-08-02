@@ -74,6 +74,7 @@ These configuration keys are available:
 | `word-completion`     | Overrides the [`editor.word-completion`](./editor.md#editorword-completion-section) configuration for the language. |
 | `workspace-lsp-roots`     | Directories relative to the workspace root that are treated as LSP roots. Should only be set in `.helix/config.toml`. Overwrites the setting of the same name in `config.toml` if set. |
 | `persistent-diagnostic-sources` | An array of LSP diagnostic sources assumed unchanged when the language server resends the same set of diagnostics. Helix can track the position for these diagnostics internally instead. Useful for diagnostics that are recomputed on save.
+| `rainbow-brackets` | Overrides the `editor.rainbow-brackets` config key for the language |
 
 ### File-type detection and the `file-types` key
 
@@ -110,7 +111,7 @@ of the formatter command. In particular, the `%{buffer_name}` variable can be pa
 argument to the formatter:
 
 ```toml
-formatter = { command = "mylang-formatter" , args = ["--stdin", "--stdin-filename %{buffer_name}"] }
+formatter = { command = "mylang-formatter" , args = ["--stdin", "--stdin-filename", "%{buffer_name}"] }
 ```
 
 ## Language Server configuration

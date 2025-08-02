@@ -446,6 +446,8 @@ pub struct Config {
     pub editor_config: bool,
     /// Inline blame allows showing the latest commit that affected the line the cursor is on as virtual text
     pub inline_blame: InlineBlameConfig,
+    /// Whether to render rainbow colors for matching brackets. Defaults to `false`.
+    pub rainbow_brackets: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Eq, PartialOrd, Ord)]
@@ -696,6 +698,9 @@ pub enum StatusLineElement {
     /// Indicator for selected register
     Register,
 
+    /// The base of current working directory
+    CurrentWorkingDirectory,
+
     /// Word Count
     WordCount,
 }
@@ -726,6 +731,7 @@ impl Display for StatusLineElement {
             Spacer => "spacer",
             VersionControl => "version-control",
             Register => "register",
+            CurrentWorkingDirectory => "current-working-directory",
             WordCount => "word-count",
         };
         write!(f, "{element}")
@@ -1157,10 +1163,11 @@ impl Default for Config {
             indent_heuristic: IndentationHeuristic::default(),
             jump_label_alphabet: ('a'..='z').collect(),
             inline_diagnostics: InlineDiagnosticsConfig::default(),
-            end_of_line_diagnostics: DiagnosticFilter::Disable,
+            end_of_line_diagnostics: DiagnosticFilter::Enable(Severity::Hint),
             clipboard_provider: ClipboardProvider::default(),
             inline_blame: InlineBlameConfig::default(),
             editor_config: true,
+            rainbow_brackets: false,
         }
     }
 }

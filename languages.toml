@@ -1491,6 +1491,7 @@ file-types = [
   { glob = ".clang-format" },
   { glob = ".clang-tidy" },
   { glob = ".gem/credentials" },
+  { glob = ".kube/config" },
   "sublime-syntax"
 ]
 comment-token = "#"
@@ -2995,7 +2996,8 @@ file-types = [
   "sublime-snippet",
   "xsl",
   "mpd",
-  "smil"
+  "smil",
+  "gpx",
 ]
 block-comment-tokens = { start = "<!--", end = "-->" }
 indent = { tab-width = 2, unit = "  " }
@@ -3103,6 +3105,7 @@ file-types = [
   { glob = "hgrc" },
   { glob = "npmrc" },
   { glob = "rclone.conf" },
+  { glob = ".aws/config" },
   "properties",
   "cfg",
   "directory"
@@ -4694,4 +4697,15 @@ grammar = "toml"
 comment-token = "#"
 file-types = [{glob = "Cross.toml"}]
 language-servers = [ "taplo", "tombi" ]
+indent = { tab-width = 2, unit = "  " }
+
+# https://git-cliff.org/docs/configuration/
+[[language]]
+name = "git-cliff-config"
+scope = "source.git-cliff-config"
+injection-regex = "git-cliff(-config)"
+grammar = "toml"
+comment-token = "#"
+file-types = [{ glob = "cliff.toml" }]
+language-servers = ["taplo", "tombi"]
 indent = { tab-width = 2, unit = "  " }

@@ -1,22 +1,56 @@
-(single_line_comment) @comment
-(multi_line_comment) @comment
+(keyword) @keyword
 
-(node
-    (identifier) @variable)
+; Variables
+ 
+(identifier) @variable
+
+; Types
+
+(node (identifier) @type)
+
+(type) @type
+
+(annotation_type) @type.builtin
+
+; Properties
 
 (prop (identifier) @attribute)
 
-(type (_) @type) @punctuation.bracket
-
-(keyword) @keyword
+; Literals
 
 (string) @string
+
+(escape) @string.escape
+
 (number) @constant.numeric
+(number (decimal) @constant.numeric.float)
+(number (exponent) @constant.numeric.float)
+
 (boolean) @constant.builtin.boolean
 
-"." @punctuation.delimiter
+"null" @constant.builtin
 
-"=" @operator
+; Operators
+[
+ "="
+ "+"
+ "-"
+] @operator
 
-"{" @punctuation.bracket
-"}" @punctuation.bracket
+; Punctuation
+
+[
+"{" "}"
+"(" ")"
+] @punctuation.bracket
+
+[
+  ";"
+] @punctuation.delimiter
+
+; Comments
+
+[
+  (single_line_comment)
+  (multi_line_comment)
+] @comment

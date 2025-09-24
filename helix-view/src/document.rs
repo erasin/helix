@@ -761,14 +761,6 @@ impl Document {
         }
     }
 
-    pub fn should_request_full_file_blame(&mut self, auto_fetch: bool) -> bool {
-        if auto_fetch {
-            true
-        } else {
-            self.is_blame_potentially_out_of_date
-        }
-    }
-
     pub fn default(
         config: Arc<dyn DynAccess<Config>>,
         syn_loader: Arc<ArcSwap<syntax::Loader>>,

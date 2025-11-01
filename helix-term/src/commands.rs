@@ -615,6 +615,7 @@ impl MappableCommand {
         extend_to_word, "Extend to a two-character label",
         goto_next_tabstop, "Goto next snippet placeholder",
         goto_prev_tabstop, "Goto next snippet placeholder",
+        blame_line, "Show blame for the current line",
         rotate_selections_first, "Make the first selection your primary one",
         rotate_selections_last, "Make the last selection your primary one",
         blame_line, "Show blame for the current line",

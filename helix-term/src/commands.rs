@@ -618,7 +618,6 @@ impl MappableCommand {
         blame_line, "Show blame for the current line",
         rotate_selections_first, "Make the first selection your primary one",
         rotate_selections_last, "Make the last selection your primary one",
-        blame_line, "Show blame for the current line",
         open_or_focus_explorer, "Open or focus explorer",
         reveal_current_file, "Reveal current file in explorer",
     );

@@ -53,6 +53,10 @@
 
 ; Variables
 ; --------------------
+
+(initialized_variable_definition
+  name: (identifier) @variable)
+
 ; the "File" in var file = File();
 ((identifier) @namespace
  (#match? @namespace "^_?[A-Z].*[a-z]")) ; catch Classes or IClasses not CLASSES

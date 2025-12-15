@@ -31,8 +31,10 @@ pub use spinner::{ProgressSpinners, Spinner};
 pub use text::Text;
 
 use helix_view::Editor;
-use tui::text::{Span, Spans};
+use tui::text::{Span, Spans, ToSpan};
+use tui::widgets::Cell;
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::{error::Error, path::PathBuf};
 
@@ -186,6 +188,22 @@ pub fn raw_regex_prompt(
     cx.push_layer(Box::new(prompt));
 }
 
+/// We want to exclude files that the editor can't handle yet
+fn get_excluded_types() -> ignore::types::Types {
+    use ignore::types::TypesBuilder;
+    let mut type_builder = TypesBuilder::new();
+    type_builder
+        .add(
+            "compressed",
+            "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}",
+        )
+        .expect("Invalid type definition");
+    type_builder.negate("all");
+    type_builder
+        .build()
+        .expect("failed to build excluded_types")
+}
+
 #[derive(Debug)]
 pub struct FilePickerData {
     root: PathBuf,
@@ -194,7 +212,7 @@ pub struct FilePickerData {
 type FilePicker = Picker<PathBuf, FilePickerData>;
 
 pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
-    use ignore::{types::TypesBuilder, WalkBuilder};
+    use ignore::WalkBuilder;
     use std::time::Instant;
 
     let config = editor.config();
@@ -209,7 +227,8 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
     let absolute_root = root.canonicalize().unwrap_or_else(|_| root.clone());
 
     let mut walk_builder = WalkBuilder::new(&root);
-    walk_builder
+
+    let mut files = walk_builder
         .hidden(config.file_picker.hidden)
         .parents(config.file_picker.parents)
         .ignore(config.file_picker.ignore)
@@ -219,31 +238,18 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
         .git_exclude(config.file_picker.git_exclude)
         .sort_by_file_name(|name1, name2| name1.cmp(name2))
         .max_depth(config.file_picker.max_depth)
-        .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks));
-
-    walk_builder.add_custom_ignore_filename(helix_loader::config_dir().join("ignore"));
-    walk_builder.add_custom_ignore_filename(".helix/ignore");
-
-    // We want to exclude files that the editor can't handle yet
-    let mut type_builder = TypesBuilder::new();
-    type_builder
-        .add(
-            "compressed",
-            "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}",
-        )
-        .expect("Invalid type definition");
-    type_builder.negate("all");
-    let excluded_types = type_builder
+        .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks))
+        .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"))
+        .add_custom_ignore_filename(".helix/ignore")
+        .types(get_excluded_types())
         .build()
-        .expect("failed to build excluded_types");
-    walk_builder.types(excluded_types);
-    let mut files = walk_builder.build().filter_map(|entry| {
-        let entry = entry.ok()?;
-        if !entry.file_type()?.is_file() {
-            return None;
-        }
-        Some(entry.into_path())
-    });
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            if !entry.file_type()?.is_file() {
+                return None;
+            }
+            Some(entry.into_path())
+        });
     log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
 
     let columns = [PickerColumn::new(
@@ -254,15 +260,8 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
 
             let icons = ICONS.load();
 
-            if let Some(icon) = icons.mime().get(Some(&path.to_path_buf()), None) {
-                if let Some(color) = icon.color() {
-                    spans.push(Span::styled(
-                        format!("{}  ", icon.glyph()),
-                        Style::default().fg(color),
-                    ));
-                } else {
-                    spans.push(Span::raw(format!("{}  ", icon.glyph())));
-                }
+            if let Some(icon) = icons.fs().from_path(path) {
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
             }
 
             if let Some(dirs) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -319,33 +318,34 @@ type FileExplorer = Picker<(PathBuf, bool), (PathBuf, Style)>;
 
 pub fn file_explorer(root: PathBuf, editor: &Editor) -> Result<FileExplorer, std::io::Error> {
     let directory_style = editor.theme.get("ui.text.directory");
-    let directory_content = directory_content(&root)?;
+    let directory_content = directory_content(&root, editor)?;
 
     let columns = [PickerColumn::new(
         "path",
-        |(path, is_dir): &(PathBuf, bool), (root, directory_style): &(PathBuf, Style)| {
-            let name = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+        |(path, is_dir): &(PathBuf, bool), (_root, directory_style): &(PathBuf, Style)| {
             let icons = ICONS.load();
-            if *is_dir {
-                if let Some(icon) = icons.mime().directory() {
-                    Span::styled(format!("{icon}  {name}/"), *directory_style).into()
-                } else {
-                    Span::styled(format!("{name}/"), *directory_style).into()
-                }
-            } else if let Some(icon) = icons.mime().get(Some(path), None).cloned() {
-                let mut spans = Vec::with_capacity(2);
-                if let Some(color) = icon.color() {
-                    let icon =
-                        Span::styled(format!("{}  ", icon.glyph()), Style::default().fg(color));
-                    let filename = Span::raw(name);
 
-                    spans.push(icon);
-                    spans.push(filename);
-                } else {
-                    spans.push(Span::raw(format!("{}  ", icon.glyph())));
-                    spans.push(Span::raw(name));
+            let name = path.file_name();
+            // If path is `..` then this will be `None` and signifies being the
+            // previous directory, which said another way, is the currently open
+            // directory we are viewing.
+            let is_open = name.is_none() && *is_dir;
+
+            // Path `..` does not have a name, and so will become `..` as a string.
+            let name = name.map_or_else(|| Cow::Borrowed(".."), |dir| dir.to_string_lossy());
+
+            if *is_dir {
+                match icons.fs().directory(is_open) {
+                    Some(icon) => Span::styled(format!("{icon} {name}/"), *directory_style).into(),
+                    None => Span::styled(format!("{name}/"), *directory_style).into(),
                 }
-                Spans::from(spans).into()
+            } else if let Some(icon) = icons.fs().from_path(path) {
+                let mut spans = Vec::with_capacity(2);
+
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
+                spans.push(Span::raw(name));
+
+                Cell::from(Spans::from(spans))
             } else {
                 name.into()
             }
@@ -370,10 +370,9 @@ pub fn file_explorer(root: PathBuf, editor: &Editor) -> Result<FileExplorer, std
                 });
                 cx.jobs.callback(callback);
             } else if let Err(e) = cx.editor.open(path, action) {
-                let err = if let Some(err) = e.source() {
-                    format!("{}", err)
-                } else {
-                    format!("unable to open \"{}\"", path.display())
+                let err = match e.source() {
+                    Some(err) => format!("{}", err),
+                    None => format!("unable to open \"{}\"", path.display()),
                 };
                 cx.editor.set_error(err);
             }
@@ -384,22 +383,62 @@ pub fn file_explorer(root: PathBuf, editor: &Editor) -> Result<FileExplorer, std
     Ok(picker)
 }
 
-fn directory_content(path: &Path) -> Result<Vec<(PathBuf, bool)>, std::io::Error> {
-    let mut content: Vec<_> = std::fs::read_dir(path)?
-        .flatten()
-        .map(|entry| {
-            (
-                entry.path(),
-                entry.file_type().is_ok_and(|file_type| file_type.is_dir()),
-            )
+fn directory_content(root: &Path, editor: &Editor) -> Result<Vec<(PathBuf, bool)>, std::io::Error> {
+    use ignore::WalkBuilder;
+
+    let config = editor.config();
+
+    let mut walk_builder = WalkBuilder::new(root);
+
+    let mut content: Vec<(PathBuf, bool)> = walk_builder
+        .hidden(config.file_explorer.hidden)
+        .parents(config.file_explorer.parents)
+        .ignore(config.file_explorer.ignore)
+        .follow_links(config.file_explorer.follow_symlinks)
+        .git_ignore(config.file_explorer.git_ignore)
+        .git_global(config.file_explorer.git_global)
+        .git_exclude(config.file_explorer.git_exclude)
+        .max_depth(Some(1))
+        .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"))
+        .add_custom_ignore_filename(".helix/ignore")
+        .types(get_excluded_types())
+        .build()
+        .filter_map(|entry| {
+            entry
+                .map(|entry| {
+                    let is_dir = entry
+                        .file_type()
+                        .is_some_and(|file_type| file_type.is_dir());
+                    let mut path = entry.path().to_path_buf();
+                    if is_dir && path != root && config.file_explorer.flatten_dirs {
+                        while let Some(single_child_directory) = get_child_if_single_dir(&path) {
+                            path = single_child_directory;
+                        }
+                    }
+                    (path, is_dir)
+                })
+                .ok()
+                .filter(|entry| entry.0 != root)
         })
         .collect();
 
     content.sort_by(|(path1, is_dir1), (path2, is_dir2)| (!is_dir1, path1).cmp(&(!is_dir2, path2)));
-    if path.parent().is_some() {
-        content.insert(0, (path.join(".."), true));
+
+    if root.parent().is_some() {
+        content.insert(0, (root.join(".."), true));
     }
+
     Ok(content)
+}
+
+fn get_child_if_single_dir(path: &Path) -> Option<PathBuf> {
+    let mut entries = path.read_dir().ok()?;
+    let entry = entries.next()?.ok()?;
+    if entries.next().is_none() && entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+        Some(entry.path())
+    } else {
+        None
+    }
 }
 
 pub mod completers {
@@ -726,7 +765,8 @@ pub mod completers {
                 .flatten()
                 .filter_map(|res| {
                     let entry = res.ok()?;
-                    if entry.metadata().ok()?.is_file() {
+                    let metadata = entry.metadata().ok()?;
+                    if metadata.is_file() || metadata.is_symlink() {
                         entry.file_name().into_string().ok()
                     } else {
                         None
@@ -771,5 +811,29 @@ pub mod completers {
         }
 
         completions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{create_dir, File};
+
+    use super::*;
+
+    #[test]
+    fn test_get_child_if_single_dir() {
+        let root = tempfile::tempdir().unwrap();
+
+        assert_eq!(get_child_if_single_dir(root.path()), None);
+
+        let dir = root.path().join("dir1");
+        create_dir(&dir).unwrap();
+
+        assert_eq!(get_child_if_single_dir(root.path()), Some(dir));
+
+        let file = root.path().join("file");
+        File::create(file).unwrap();
+
+        assert_eq!(get_child_if_single_dir(root.path()), None);
     }
 }

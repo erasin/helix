@@ -1,6 +1,5 @@
-use std::borrow::Cow;
-
-use helix_core::{coords_at_pos, encoding, Position};
+use helix_core::indent::IndentStyle;
+use helix_core::{coords_at_pos, encoding, unicode::width::UnicodeWidthStr, Position};
 use helix_lsp::lsp::DiagnosticSeverity;
 use helix_view::document::DEFAULT_LANGUAGE_NAME;
 use helix_view::icons::ICONS;
@@ -15,7 +14,7 @@ use crate::ui::ProgressSpinners;
 
 use helix_view::editor::StatusLineElement as StatusLineElementID;
 use tui::buffer::Buffer as Surface;
-use tui::text::{Span, Spans};
+use tui::text::{Span, Spans, ToSpan};
 
 pub struct RenderContext<'a> {
     pub editor: &'a Editor,
@@ -143,6 +142,7 @@ where
         helix_view::editor::StatusLineElement::ReadOnlyIndicator => render_read_only_indicator,
         helix_view::editor::StatusLineElement::FileEncoding => render_file_encoding,
         helix_view::editor::StatusLineElement::FileLineEnding => render_file_line_ending,
+        helix_view::editor::StatusLineElement::FileIndentStyle => render_file_indent_style,
         helix_view::editor::StatusLineElement::FileType => render_file_type,
         helix_view::editor::StatusLineElement::Diagnostics => render_diagnostics,
         helix_view::editor::StatusLineElement::WorkspaceDiagnostics => render_workspace_diagnostics,
@@ -157,6 +157,7 @@ where
         helix_view::editor::StatusLineElement::Spacer => render_spacer,
         helix_view::editor::StatusLineElement::VersionControl => render_version_control,
         helix_view::editor::StatusLineElement::Register => render_register,
+        helix_view::editor::StatusLineElement::CurrentWorkingDirectory => render_cwd,
     }
 }
 
@@ -167,18 +168,16 @@ where
     let visible = context.focused;
     let config = context.editor.config();
     let modenames = &config.statusline.mode;
+    let mode_str = match context.editor.mode() {
+        Mode::Insert => &modenames.insert,
+        Mode::Select => &modenames.select,
+        Mode::Normal => &modenames.normal,
+    };
     let content = if visible {
-        Cow::Owned(format!(
-            " {} ",
-            match context.editor.mode() {
-                Mode::Insert => &modenames.insert,
-                Mode::Select => &modenames.select,
-                Mode::Normal => &modenames.normal,
-            }
-        ))
+        format!(" {mode_str} ")
     } else {
         // If not focused, explicitly leave an empty space instead of returning None.
-        Cow::Borrowed("     ")
+        " ".repeat(mode_str.width() + 2)
     };
     let style = if visible && config.color_modes {
         match context.editor.mode() {
@@ -234,6 +233,7 @@ where
             });
 
     let icons = ICONS.load();
+
     for sev in &context.editor.config().statusline.diagnostics {
         match sev {
             Severity::Hint if hints > 0 => {
@@ -318,22 +318,13 @@ where
     }
 
     let icons = ICONS.load();
-    let icon = icons.kind().workspace();
 
-    // NOTE: Special case when the `workspace` key is set to `""`:
-    //
-    // ```
-    // [icons.kind]
-    // workspace = ""
-    // ```
-    //
-    // This will remove the default ` W ` so that the rest of the icons are spaced correctly.
+    let icon = icons.ui().workspace();
+
+    // Special case when the `workspace` key is set to `""`:
+    //     - This will remove the default ` W ` so that the rest of the icons are spaced correctly.
     if !icon.glyph().is_empty() {
-        if let Some(style) = icon.color().map(|color| Style::default().fg(color)) {
-            write(context, Span::styled(format!("{} ", icon.glyph()), style));
-        } else {
-            write(context, format!("{} ", icon.glyph()).into());
-        }
+        write(context, icon.to_span_with(|icon| format!(" {icon} ")));
     }
 
     for sev in sevs {
@@ -493,18 +484,17 @@ fn render_file_type<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let file_type = context.doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
-
     let icons = ICONS.load();
 
-    if let Some(icon) = icons.mime().get(context.doc.path(), Some(file_type)) {
-        if let Some(style) = icon.color().map(|color| Style::default().fg(color)) {
-            write(context, Span::styled(format!(" {} ", icon.glyph()), style));
-        } else {
-            write(context, format!(" {} ", icon.glyph()).into());
-        }
+    let lang = context.doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
+
+    if let Some(icon) = icons
+        .fs()
+        .from_optional_path_or_lang(context.doc.path().map(|path| path.as_path()), lang)
+    {
+        write(context, icon.to_span_with(|icon| format!(" {icon} ")));
     } else {
-        write(context, format!(" {} ", file_type).into());
+        write(context, format!(" {lang} ").into());
     }
 }
 
@@ -585,10 +575,13 @@ fn render_separator<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let sep = &context.editor.config().statusline.separator;
     let style = context.editor.theme.get("ui.statusline.separator");
 
-    write(context, Span::styled(sep.to_string(), style));
+    let icons = ICONS.load();
+
+    let separator = icons.ui().statusline().separator().to_string();
+
+    write(context, Span::styled(separator, style));
 }
 
 fn render_spacer<'a, F>(context: &mut RenderContext<'a>, write: F)
@@ -604,16 +597,16 @@ where
 {
     let head = context.doc.version_control_head().unwrap_or_default();
 
-    let icons = ICONS.load();
-    let icon = icons.vcs().branch();
+    if !head.is_empty() {
+        let icons = ICONS.load();
 
-    let vcs = if icon.is_empty() {
-        format!(" {head} ")
-    } else {
-        format!(" {icon} {head} ")
-    };
+        let vcs = match icons.vcs().branch() {
+            Some(icon) => format!(" {icon} {head} "),
+            None => format!(" {head} "),
+        };
 
-    write(context, vcs.into());
+        write(context, vcs.into());
+    }
 }
 
 fn render_register<'a, F>(context: &mut RenderContext<'a>, write: F)
@@ -623,4 +616,34 @@ where
     if let Some(reg) = context.editor.selected_register {
         write(context, format!(" reg={} ", reg).into())
     }
+}
+
+fn render_file_indent_style<'a, F>(context: &mut RenderContext<'a>, write: F)
+where
+    F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
+{
+    let style = context.doc.indent_style;
+
+    write(
+        context,
+        match style {
+            IndentStyle::Tabs => " tabs ".into(),
+            IndentStyle::Spaces(indent) => {
+                format!(" {} space{} ", indent, if indent == 1 { "" } else { "s" }).into()
+            }
+        },
+    );
+}
+
+fn render_cwd<'a, F>(context: &mut RenderContext<'a>, write: F)
+where
+    F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
+{
+    let cwd = helix_stdx::env::current_working_dir();
+    let cwd = cwd
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    write(context, cwd.into())
 }

@@ -22,7 +22,7 @@ use tokio::sync::mpsc::Sender;
 use tui::{
     buffer::Buffer as Surface,
     layout::Constraint,
-    text::{Span, Spans},
+    text::{Span, Spans, ToSpan},
     widgets::{Block, BorderType, Cell, Row, Table},
 };
 
@@ -32,7 +32,7 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{self, AtomicUsize},
         Arc,
@@ -47,6 +47,7 @@ use helix_core::{
 use helix_view::{
     editor::Action,
     graphics::{CursorKind, Margin, Modifier, Rect},
+    icons::ICONS,
     theme::Style,
     view::ViewPosition,
     Document, DocumentId, Editor,
@@ -85,7 +86,7 @@ pub type FileLocation<'a> = (PathOrId<'a>, Option<(usize, usize)>);
 
 pub enum CachedPreview {
     Document(Box<Document>),
-    Directory(Vec<(String, bool)>),
+    Directory(Vec<(PathBuf, bool)>),
     Binary,
     LargeFile,
     NotFound,
@@ -107,7 +108,7 @@ impl Preview<'_, '_> {
         }
     }
 
-    fn dir_content(&self) -> Option<&Vec<(String, bool)>> {
+    fn dir_content(&self) -> Option<&Vec<(PathBuf, bool)>> {
         match self {
             Preview::Cached(CachedPreview::Directory(dir_content)) => Some(dir_content),
             _ => None,
@@ -258,6 +259,7 @@ pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     widths: Vec<Constraint>,
 
     callback_fn: PickerCallback<T>,
+    default_action: Action,
 
     pub truncate_start: bool,
     /// Caches paths to documents
@@ -308,7 +310,10 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         F: Fn(&mut Context, &T, Action) + 'static,
     {
         let columns: Arc<[_]> = columns.into_iter().collect();
-        let matcher_columns = columns.iter().filter(|col| col.filter).count() as u32;
+        let matcher_columns = columns
+            .iter()
+            .filter(|col: &&Column<T, D>| col.filter)
+            .count() as u32;
         assert!(matcher_columns > 0);
         let matcher = Nucleo::new(
             Config::DEFAULT,
@@ -382,6 +387,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
             truncate_start: true,
             show_preview: true,
             callback_fn: Box::new(callback_fn),
+            default_action: Action::Replace,
             completion_height: 0,
             widths,
             preview_cache: HashMap::new(),
@@ -424,6 +430,11 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         self
     }
 
+    pub fn with_initial_cursor(mut self, cursor: u32) -> Self {
+        self.cursor = cursor;
+        self
+    }
+
     pub fn with_dynamic_query(
         mut self,
         callback: DynQueryCallback<T, D>,
@@ -437,6 +448,11 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         };
         helix_event::send_blocking(&handler, event);
         self.dynamic_query_handler = Some(handler);
+        self
+    }
+
+    pub fn with_default_action(mut self, action: Action) -> Self {
+        self.default_action = action;
         self
     }
 
@@ -585,8 +601,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                     // retrieve the `Arc<Path>` key. The `path` in scope here is a `&Path` and
                     // we can cheaply clone the key for the preview highlight handler.
                     let (path, preview) = self.preview_cache.get_key_value(path).unwrap();
-                    if matches!(preview, CachedPreview::Document(doc) if doc.language_config().is_none())
-                    {
+                    if matches!(preview, CachedPreview::Document(doc) if doc.syntax().is_none()) {
                         helix_event::send_blocking(&self.preview_highlight_handler, path.clone());
                     }
                     return Some((Preview::Cached(preview), range));
@@ -596,19 +611,8 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                 let preview = std::fs::metadata(&path)
                     .and_then(|metadata| {
                         if metadata.is_dir() {
-                            let files = super::directory_content(&path)?;
-                            let file_names: Vec<_> = files
-                                .iter()
-                                .filter_map(|(path, is_dir)| {
-                                    let name = path.file_name()?.to_string_lossy();
-                                    if *is_dir {
-                                        Some((format!("{}/", name), true))
-                                    } else {
-                                        Some((name.into_owned(), false))
-                                    }
-                                })
-                                .collect();
-                            Ok(CachedPreview::Directory(file_names))
+                            let files = super::directory_content(&path, editor)?;
+                            Ok(CachedPreview::Directory(files))
                         } else if metadata.is_file() {
                             if metadata.len() > MAX_FILE_SIZE_FOR_PREVIEW {
                                 return Ok(CachedPreview::LargeFile);
@@ -624,27 +628,27 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                             if content_type.is_binary() {
                                 return Ok(CachedPreview::Binary);
                             }
-                            Document::open(
+                            let mut doc = Document::open(
                                 &path,
                                 None,
                                 false,
                                 editor.config.clone(),
                                 editor.syn_loader.clone(),
                             )
-                            .map_or(
-                                Err(std::io::Error::new(
-                                    std::io::ErrorKind::NotFound,
-                                    "Cannot open document",
-                                )),
-                                |doc| {
-                                    // Asynchronously highlight the new document
-                                    helix_event::send_blocking(
-                                        &self.preview_highlight_handler,
-                                        path.clone(),
-                                    );
-                                    Ok(CachedPreview::Document(Box::new(doc)))
-                                },
-                            )
+                            .or(Err(std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                "Cannot open document",
+                            )))?;
+                            let loader = editor.syn_loader.load();
+                            if let Some(language_config) = doc.detect_language_config(&loader) {
+                                doc.language = Some(language_config);
+                                // Asynchronously highlight the new document
+                                helix_event::send_blocking(
+                                    &self.preview_highlight_handler,
+                                    path.clone(),
+                                );
+                            }
+                            Ok(CachedPreview::Document(Box::new(doc)))
                         } else {
                             Err(std::io::Error::new(
                                 std::io::ErrorKind::NotFound,
@@ -862,12 +866,11 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render_preview(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
         // -- Render the frame:
         // clear area
         let background = cx.editor.theme.get("ui.background");
-        let text = cx.editor.theme.get("ui.text");
-        let directory = cx.editor.theme.get("ui.text.directory");
         surface.clear_with(area, background);
 
         const BLOCK: Block<'_> = Block::bordered();
@@ -882,7 +885,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         if let Some((preview, range)) = self.get_preview(cx.editor) {
             let doc = match preview.document() {
                 Some(doc)
-                    if range.map_or(true, |(start, end)| {
+                    if range.is_none_or(|(start, end)| {
                         start <= end && end <= doc.text().len_lines()
                     }) =>
                 {
@@ -893,14 +896,58 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                         for (i, (path, is_dir)) in
                             dir_content.iter().take(inner.height as usize).enumerate()
                         {
-                            let style = if *is_dir { directory } else { text };
-                            surface.set_stringn(
-                                inner.x,
-                                inner.y + i as u16,
-                                path,
-                                inner.width as usize,
-                                style,
-                            );
+                            let icons = ICONS.load();
+
+                            let dir = path.file_name();
+                            // If path is `..` then this will be `None` and signifies being the
+                            // previous directory, which said another way, is the currently open
+                            // directory we are viewing.
+                            let is_open = dir.is_none() && *is_dir;
+
+                            let name = dir
+                                // Path `..` does not have a name, and so will become `..` as a string.
+                                .map_or_else(|| Cow::Borrowed(".."), |dir| dir.to_string_lossy());
+
+                            if *is_dir {
+                                let dir = match icons.fs().directory(is_open) {
+                                    Some(icon) => format!("{icon} {name}/"),
+                                    None => format!("{name}/"),
+                                };
+
+                                surface.set_stringn(
+                                    inner.x,
+                                    inner.y + i as u16,
+                                    dir,
+                                    inner.width as usize,
+                                    cx.editor.theme.get("ui.text.directory"),
+                                );
+                            } else if let Some(icon) = icons.fs().from_path(path) {
+                                let icon = icon.to_span_with(|icon| format!("{icon} "));
+
+                                surface.set_stringn(
+                                    inner.x,
+                                    inner.y + i as u16,
+                                    &icon.content,
+                                    inner.width as usize,
+                                    icon.style,
+                                );
+
+                                surface.set_stringn(
+                                    inner.x + icon.width() as u16,
+                                    inner.y + i as u16,
+                                    name,
+                                    inner.width as usize,
+                                    cx.editor.theme.get("ui.text"),
+                                );
+                            } else {
+                                surface.set_stringn(
+                                    inner.x,
+                                    inner.y + i as u16,
+                                    name,
+                                    inner.width as usize,
+                                    cx.editor.theme.get("ui.text"),
+                                );
+                            }
                         }
                         return;
                     }
@@ -908,7 +955,13 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                     let alt_text = preview.placeholder();
                     let x = inner.x + inner.width.saturating_sub(alt_text.len() as u16) / 2;
                     let y = inner.y + inner.height / 2;
-                    surface.set_stringn(x, y, alt_text, inner.width as usize, text);
+                    surface.set_stringn(
+                        x,
+                        y,
+                        alt_text,
+                        inner.width as usize,
+                        cx.editor.theme.get("ui.text"),
+                    );
                     return;
                 }
             };
@@ -1030,23 +1083,23 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
         let close_fn = |picker: &mut Self| {
             // if the picker is very large don't store it as last_picker to avoid
             // excessive memory consumption
-            let callback: compositor::Callback = if picker.matcher.snapshot().item_count() > 100_000
-            {
-                Box::new(|compositor: &mut Compositor, _ctx| {
-                    // remove the layer
-                    compositor.pop();
-                })
-            } else {
-                // stop streaming in new items in the background, really we should
-                // be restarting the stream somehow once the picker gets
-                // reopened instead (like for an FS crawl) that would also remove the
-                // need for the special case above but that is pretty tricky
-                picker.version.fetch_add(1, atomic::Ordering::Relaxed);
-                Box::new(|compositor: &mut Compositor, _ctx| {
-                    // remove the layer
-                    compositor.last_picker = compositor.pop();
-                })
-            };
+            let callback: compositor::Callback =
+                if picker.matcher.snapshot().item_count() > 1_000_000 {
+                    Box::new(|compositor: &mut Compositor, _ctx| {
+                        // remove the layer
+                        compositor.pop();
+                    })
+                } else {
+                    // stop streaming in new items in the background, really we should
+                    // be restarting the stream somehow once the picker gets
+                    // reopened instead (like for an FS crawl) that would also remove the
+                    // need for the special case above but that is pretty tricky
+                    picker.version.fetch_add(1, atomic::Ordering::Relaxed);
+                    Box::new(|compositor: &mut Compositor, _ctx| {
+                        // remove the layer
+                        compositor.last_picker = compositor.pop();
+                    })
+                };
             EventResult::Consumed(Some(callback))
         };
 
@@ -1072,7 +1125,7 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
             key!(Esc) | ctrl!('c') => return close_fn(self),
             alt!(Enter) => {
                 if let Some(option) = self.selection() {
-                    (self.callback_fn)(ctx, option, Action::Replace);
+                    (self.callback_fn)(ctx, option, self.default_action);
                 }
             }
             key!(Enter) => {
@@ -1096,7 +1149,7 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
                     self.handle_prompt_change(true);
                 } else {
                     if let Some(option) = self.selection() {
-                        (self.callback_fn)(ctx, option, Action::Replace);
+                        (self.callback_fn)(ctx, option, self.default_action);
                     }
                     if let Some(history_register) = self.prompt.history_register() {
                         if let Err(err) = ctx

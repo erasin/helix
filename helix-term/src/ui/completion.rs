@@ -1,9 +1,9 @@
+use crate::handlers::completion::LspCompletionItem;
 use crate::ui::{menu, Markdown, Menu, Popup, PromptEvent};
 use crate::{
     compositor::{Component, Context, Event, EventResult},
     handlers::completion::{
-        trigger_auto_completion, CompletionItem, CompletionResponse, LspCompletionItem,
-        ResolveHandler,
+        trigger_auto_completion, CompletionItem, CompletionResponse, ResolveHandler,
     },
 };
 use helix_core::snippets::{ActiveSnippet, RenderedSnippet, Snippet};
@@ -29,7 +29,7 @@ use std::cmp::Reverse;
 impl menu::Item for CompletionItem {
     type Data = Style;
 
-    fn format(&self, dir_style: &Self::Data) -> menu::Row {
+    fn format(&self, dir_style: &Self::Data) -> menu::Row<'_> {
         let deprecated = match self {
             CompletionItem::Lsp(LspCompletionItem { item, .. }) => {
                 item.deprecated.unwrap_or_default()
@@ -107,15 +107,15 @@ impl menu::Item for CompletionItem {
         };
 
         let icons = ICONS.load();
-        let name = &kind.0[0].content;
 
+        let name = &kind.0[0].content;
         let is_folder = kind.0[0].content == "folder";
 
         if let Some(icon) = icons.kind().get(name) {
-            kind.0[0].content = format!("{}  {name}", icon.glyph()).into();
+            kind.0[0].content = format!("{icon} {name}").into();
 
-            if let Some(color) = icon.color() {
-                kind.0[0].style = Style::default().fg(color);
+            if let Some(style) = icon.color().map(|color| Style::default().fg(color)) {
+                kind.0[0].style = style;
             } else if is_folder {
                 kind.0[0].style = *dir_style;
             }

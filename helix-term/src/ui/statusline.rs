@@ -14,7 +14,7 @@ use crate::ui::ProgressSpinners;
 
 use helix_view::editor::StatusLineElement as StatusLineElementID;
 use tui::buffer::Buffer as Surface;
-use tui::text::{Span, Spans};
+use tui::text::{Span, Spans, ToSpan};
 
 pub struct RenderContext<'a> {
     pub editor: &'a Editor,
@@ -253,6 +253,7 @@ where
             });
 
     let icons = ICONS.load();
+
     for sev in &context.editor.config().statusline.diagnostics {
         match sev {
             Severity::Hint if hints > 0 => {
@@ -337,22 +338,13 @@ where
     }
 
     let icons = ICONS.load();
-    let icon = icons.kind().workspace();
 
-    // NOTE: Special case when the `workspace` key is set to `""`:
-    //
-    // ```
-    // [icons.kind]
-    // workspace = ""
-    // ```
-    //
-    // This will remove the default ` W ` so that the rest of the icons are spaced correctly.
+    let icon = icons.ui().workspace();
+
+    // Special case when the `workspace` key is set to `""`:
+    //     - This will remove the default ` W ` so that the rest of the icons are spaced correctly.
     if !icon.glyph().is_empty() {
-        if let Some(style) = icon.color().map(|color| Style::default().fg(color)) {
-            write(context, Span::styled(format!("{} ", icon.glyph()), style));
-        } else {
-            write(context, format!("{} ", icon.glyph()).into());
-        }
+        write(context, icon.to_span_with(|icon| format!(" {icon} ")));
     }
 
     for sev in sevs {
@@ -523,18 +515,17 @@ fn render_file_type<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let file_type = context.doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
-
     let icons = ICONS.load();
 
-    if let Some(icon) = icons.mime().get(context.doc.path(), Some(file_type)) {
-        if let Some(style) = icon.color().map(|color| Style::default().fg(color)) {
-            write(context, Span::styled(format!(" {} ", icon.glyph()), style));
-        } else {
-            write(context, format!(" {} ", icon.glyph()).into());
-        }
+    let lang = context.doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
+
+    if let Some(icon) = icons
+        .fs()
+        .from_optional_path_or_lang(context.doc.path().map(|path| path.as_path()), lang)
+    {
+        write(context, icon.to_span_with(|icon| format!(" {icon} ")));
     } else {
-        write(context, format!(" {} ", file_type).into());
+        write(context, format!(" {lang} ").into());
     }
 }
 
@@ -611,9 +602,13 @@ fn render_separator<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let sep = context.editor.config().statusline.separator.clone();
+    let style = context.editor.theme.get("ui.statusline.separator");
 
-    write(context, sep.into());
+    let icons = ICONS.load();
+
+    let separator = icons.ui().statusline().separator().to_string();
+
+    write(context, Span::styled(separator, style));
 }
 
 fn render_spacer<'a, F>(context: &mut RenderContext<'a>, write: F)
@@ -629,16 +624,16 @@ where
 {
     let head = context.doc.version_control_head().unwrap_or_default();
 
-    let icons = ICONS.load();
-    let icon = icons.vcs().branch();
+    if !head.is_empty() {
+        let icons = ICONS.load();
 
-    let vcs = if icon.is_empty() {
-        format!(" {head} ")
-    } else {
-        format!(" {icon} {head} ")
-    };
+        let vcs = match icons.vcs().branch() {
+            Some(icon) => format!(" {icon} {head} "),
+            None => format!(" {head} "),
+        };
 
-    write(context, vcs.into());
+        write(context, vcs.into());
+    }
 }
 
 fn render_register<'a, F>(context: &mut RenderContext<'a>, write: F)

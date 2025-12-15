@@ -33,8 +33,10 @@ pub use spinner::{ProgressSpinners, Spinner};
 pub use text::Text;
 
 use helix_view::Editor;
-use tui::text::{Span, Spans};
+use tui::text::{Span, Spans, ToSpan};
+use tui::widgets::Cell;
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::{error::Error, path::PathBuf};
 
@@ -262,15 +264,8 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
 
             let icons = ICONS.load();
 
-            if let Some(icon) = icons.mime().get(Some(&path.to_path_buf()), None) {
-                if let Some(color) = icon.color() {
-                    spans.push(Span::styled(
-                        format!("{}  ", icon.glyph()),
-                        Style::default().fg(color),
-                    ));
-                } else {
-                    spans.push(Span::raw(format!("{}  ", icon.glyph())));
-                }
+            if let Some(icon) = icons.fs().from_path(path) {
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
             }
 
             if let Some(dirs) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -331,29 +326,30 @@ pub fn file_explorer(root: PathBuf, editor: &Editor) -> Result<FileExplorer, std
 
     let columns = [PickerColumn::new(
         "path",
-        |(path, is_dir): &(PathBuf, bool), (root, directory_style): &(PathBuf, Style)| {
-            let name = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+        |(path, is_dir): &(PathBuf, bool), (_root, directory_style): &(PathBuf, Style)| {
             let icons = ICONS.load();
-            if *is_dir {
-                if let Some(icon) = icons.mime().directory() {
-                    Span::styled(format!("{icon}  {name}/"), *directory_style).into()
-                } else {
-                    Span::styled(format!("{name}/"), *directory_style).into()
-                }
-            } else if let Some(icon) = icons.mime().get(Some(path), None).cloned() {
-                let mut spans = Vec::with_capacity(2);
-                if let Some(color) = icon.color() {
-                    let icon =
-                        Span::styled(format!("{}  ", icon.glyph()), Style::default().fg(color));
-                    let filename = Span::raw(name);
 
-                    spans.push(icon);
-                    spans.push(filename);
-                } else {
-                    spans.push(Span::raw(format!("{}  ", icon.glyph())));
-                    spans.push(Span::raw(name));
+            let name = path.file_name();
+            // If path is `..` then this will be `None` and signifies being the
+            // previous directory, which said another way, is the currently open
+            // directory we are viewing.
+            let is_open = name.is_none() && *is_dir;
+
+            // Path `..` does not have a name, and so will become `..` as a string.
+            let name = name.map_or_else(|| Cow::Borrowed(".."), |dir| dir.to_string_lossy());
+
+            if *is_dir {
+                match icons.fs().directory(is_open) {
+                    Some(icon) => Span::styled(format!("{icon} {name}/"), *directory_style).into(),
+                    None => Span::styled(format!("{name}/"), *directory_style).into(),
                 }
-                Spans::from(spans).into()
+            } else if let Some(icon) = icons.fs().from_path(path) {
+                let mut spans = Vec::with_capacity(2);
+
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
+                spans.push(Span::raw(name));
+
+                Cell::from(Spans::from(spans))
             } else {
                 name.into()
             }
@@ -378,10 +374,9 @@ pub fn file_explorer(root: PathBuf, editor: &Editor) -> Result<FileExplorer, std
                 });
                 cx.jobs.callback(callback);
             } else if let Err(e) = cx.editor.open(path, action) {
-                let err = if let Some(err) = e.source() {
-                    format!("{}", err)
-                } else {
-                    format!("unable to open \"{}\"", path.display())
+                let err = match e.source() {
+                    Some(err) => format!("{}", err),
+                    None => format!("unable to open \"{}\"", path.display()),
                 };
                 cx.editor.set_error(err);
             }

@@ -881,7 +881,7 @@ fn render_tree<'a, T: TreeViewItem>(
             }
         } else {
             let icons = ICONS.load();
-            if let Some(icon) = icons.mime().get(Some(&tree.item.path()), None) {
+            if let Some(icon) = icons.fs().from_path(&tree.item.path()) {
                 let icon_color = if is_selected { None } else { icon.color() };
                 if let Some(color) = icon_color {
                     Span::styled(format!("{} ", icon.glyph()), Style::default().fg(color))

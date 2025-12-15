@@ -127,17 +127,18 @@ pub fn diff<'doc>(
                 let icons = ICONS.load();
 
                 let (icon, style) = if hunk.is_pure_insertion() {
-                    (icons.gutter().added(), added)
+                    (icons.ui().gutter().added(), added)
                 } else if hunk.is_pure_removal() {
                     if !first_visual_line {
                         return None;
                     }
-                    (icons.gutter().deleted(), deleted)
+                    (icons.ui().gutter().removed(), deleted)
                 } else {
-                    (icons.gutter().modified(), modified)
+                    (icons.ui().gutter().modified(), modified)
                 };
 
-                write!(out, "{}", icon).unwrap();
+                write!(out, "{icon}").unwrap();
+
                 Some(style)
             },
         )
@@ -312,8 +313,9 @@ fn execution_pause_indicator<'doc>(
                 return None;
             }
 
-            let sym = "▶";
-            write!(out, "{}", sym).unwrap();
+            let icons = ICONS.load();
+
+            write!(out, "{}", icons.dap().play()).unwrap();
             Some(style)
         },
     )

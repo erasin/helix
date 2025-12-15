@@ -9,7 +9,10 @@ use helix_lsp::{
     Client, LanguageServerId, OffsetEncoding,
 };
 use tokio_stream::StreamExt;
-use tui::{text::Span, widgets::Row};
+use tui::{
+    text::{Span, ToSpan},
+    widgets::Row,
+};
 
 use super::{align_view, push_jump, Align, Context, Editor};
 
@@ -251,6 +254,7 @@ fn diag_picker(
             "severity",
             |item: &PickerDiagnostic, styles: &DiagnosticStyles| {
                 let icons = ICONS.load();
+
                 match item.diag.severity {
                     Some(DiagnosticSeverity::HINT) => {
                         Span::styled(format!("{} HINT", icons.diagnostic().hint()), styles.hint)
@@ -419,19 +423,12 @@ pub fn symbol_picker(cx: &mut Context) {
         let call = move |_editor: &mut Editor, compositor: &mut Compositor| {
             let columns = [
                 ui::PickerColumn::new("kind", |item: &SymbolInformationItem, _| {
-                    let icons = ICONS.load();
                     let name = display_symbol_kind(item.symbol.kind);
 
+                    let icons = ICONS.load();
+
                     if let Some(icon) = icons.kind().get(name) {
-                        if let Some(color) = icon.color() {
-                            Span::styled(
-                                format!("{}  {name}", icon.glyph()),
-                                Style::default().fg(color),
-                            )
-                            .into()
-                        } else {
-                            format!("{}  {name}", icon.glyph()).into()
-                        }
+                        icon.to_span_with(|icon| format!("{icon} {name}")).into()
                     } else {
                         name.into()
                     }
@@ -552,19 +549,12 @@ pub fn workspace_symbol_picker(cx: &mut Context) {
     };
     let columns = [
         ui::PickerColumn::new("kind", |item: &SymbolInformationItem, _| {
-            let icons = ICONS.load();
             let name = display_symbol_kind(item.symbol.kind);
 
+            let icons = ICONS.load();
+
             if let Some(icon) = icons.kind().get(name) {
-                if let Some(color) = icon.color() {
-                    Span::styled(
-                        format!("{}  {name}", icon.glyph()),
-                        Style::default().fg(color),
-                    )
-                    .into()
-                } else {
-                    format!("{}  {name}", icon.glyph()).into()
-                }
+                icon.to_span_with(|icon| format!("{icon} {name}")).into()
             } else {
                 name.into()
             }

@@ -42,6 +42,7 @@
   ; macros
   (token_tree_pattern)
   (macro_definition)
+  (macro_invocation)
 
   ; closures
   (closure_parameters)

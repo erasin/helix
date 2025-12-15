@@ -60,3 +60,5 @@
 (pipe_table_header
   "|" @punctuation.special)
 (pipe_table_delimiter_row) @punctuation.special
+
+(pipe_table_header (pipe_table_cell) @label)

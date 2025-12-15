@@ -18,7 +18,7 @@
 ; --------------------
 (class_definition
   name: (identifier) @type)
-  
+
 (constructor_signature
   name: (identifier) @function.method)
 
@@ -42,7 +42,7 @@
 ((scoped_identifier
   scope: (identifier) @type)
  (#match? @type "^[a-zA-Z]"))
- 
+
 ((scoped_identifier
   scope: (identifier) @type
   name: (identifier) @type)
@@ -147,7 +147,7 @@
   ","
   ":"
 ] @punctuation.delimiter
-  
+
 ; Operators
 ;---------------------
 [
@@ -214,6 +214,7 @@
     "extension"
     "external"
     "factory"
+    "final"
     "Function"
     "get"
     "implements"
@@ -236,4 +237,4 @@
 
 ; when used as an identifier:
 ((identifier) @variable.builtin
- (#match? @variable.builtin "^(abstract|as|base|covariant|deferred|dynamic|export|external|factory|Function|get|implements|import|interface|library|operator|mixin|part|sealed|set|static|typedef)$"))
+ (#match? @variable.builtin "^(abstract|as|base|covariant|deferred|dynamic|export|external|factory|final|Function|get|implements|import|interface|library|operator|mixin|part|sealed|set|static|typedef)$"))

@@ -18,7 +18,7 @@
 | blueprint | ✓ |  |  |  |  | `blueprint-compiler` |
 | bovex | ✓ |  |  |  | ✓ |  |
 | c | ✓ | ✓ | ✓ | ✓ | ✓ | `clangd` |
-| c-sharp | ✓ | ✓ |  | ✓ |  | `OmniSharp` |
+| c-sharp | ✓ | ✓ |  | ✓ |  | `OmniSharp`, `csharp-ls` |
 | cabal |  |  |  |  |  | `haskell-language-server-wrapper` |
 | caddyfile | ✓ | ✓ | ✓ |  |  |  |
 | cairo | ✓ | ✓ | ✓ |  |  | `cairo-language-server` |
@@ -91,11 +91,12 @@
 | git-ignore | ✓ |  |  |  |  |  |
 | git-notes | ✓ |  |  |  |  |  |
 | git-rebase | ✓ |  |  |  |  |  |
+| github-action |  |  |  |  |  | `actions-languageserver`, `yaml-language-server` |
 | gitlab-ci | ✓ | ✓ | ✓ | ✓ | ✓ | `yaml-language-server`, `gitlab-ci-ls` |
 | gjs | ✓ | ✓ | ✓ | ✓ |  | `typescript-language-server`, `vscode-eslint-language-server`, `ember-language-server` |
 | gleam | ✓ | ✓ |  |  | ✓ | `gleam` |
 | glimmer | ✓ |  |  |  |  | `ember-language-server` |
-| glsl | ✓ | ✓ | ✓ |  |  | `glsl_analyzer` |
+| glsl | ✓ | ✓ | ✓ |  |  | `glsl_analyzer`, `glsld` |
 | gn | ✓ |  |  |  |  |  |
 | go | ✓ | ✓ | ✓ | ✓ | ✓ | `gopls`, `golangci-lint-langserver` |
 | go-format-string | ✓ |  |  |  | ✓ |  |
@@ -108,7 +109,7 @@
 | gren | ✓ | ✓ |  |  |  |  |
 | groovy | ✓ |  |  |  |  |  |
 | gts | ✓ | ✓ | ✓ | ✓ |  | `typescript-language-server`, `vscode-eslint-language-server`, `ember-language-server` |
-| hare | ✓ |  |  |  |  |  |
+| hare | ✓ |  |  |  |  | `hare-lsp` |
 | haskell | ✓ | ✓ |  |  |  | `haskell-language-server-wrapper` |
 | haskell-literate | ✓ |  |  |  |  | `haskell-language-server-wrapper` |
 | haskell-persistent | ✓ |  |  |  |  |  |
@@ -266,7 +267,7 @@
 | sway | ✓ | ✓ | ✓ |  |  | `forc` |
 | swift | ✓ | ✓ | ✓ |  | ✓ | `sourcekit-lsp` |
 | systemd | ✓ |  |  |  |  | `systemd-lsp` |
-| systemverilog | ✓ |  |  |  |  |  |
+| systemverilog | ✓ |  |  |  |  | `verible-verilog-ls` |
 | t32 | ✓ |  |  |  |  |  |
 | tablegen | ✓ | ✓ | ✓ |  |  |  |
 | tact | ✓ | ✓ | ✓ |  |  |  |

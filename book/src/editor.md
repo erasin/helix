@@ -7,6 +7,7 @@
 - [`[editor.inline-blame]` Section](#editorinlineblame-section)
 - [`[editor.cursor-shape]` Section](#editorcursor-shape-section)
 - [`[editor.file-picker]` Section](#editorfile-picker-section)
+- [`[editor.file-explorer]` Section](#editorfile-explorer-section)
 - [`[editor.buffer-picker]` Section](#editorbuffer-picker-section)
 - [`[editor.auto-pairs]` Section](#editorauto-pairs-section)
 - [`[editor.auto-save]` Section](#editorauto-save-section)

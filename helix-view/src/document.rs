@@ -188,7 +188,7 @@ pub struct Document {
 
     // Last time we wrote to the file. This will carry the time the file was last opened if there
     // were no saves.
-    last_saved_time: SystemTime,
+    pub last_saved_time: SystemTime,
 
     last_saved_revision: usize,
     version: i32, // should be usize?
@@ -197,7 +197,7 @@ pub struct Document {
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) language_servers: HashMap<LanguageServerName, Arc<Client>>,
 
-    diff_handle: Option<DiffHandle>,
+    pub diff_handle: Option<DiffHandle>,
     version_control_head: Option<Arc<ArcSwap<Box<str>>>>,
     /// Contains blame information for each line in the file
     /// We store the Result because when we access the blame manually we want to log the error

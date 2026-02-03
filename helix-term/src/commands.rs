@@ -2596,11 +2596,9 @@ fn global_search(cx: &mut Context) {
                             Err(_) => return WalkState::Continue,
                         };
 
-                        match entry.file_type() {
-                            Some(entry) if entry.is_file() => {}
-                            // skip everything else
-                            _ => return WalkState::Continue,
-                        };
+                        if !entry.path().is_file() {
+                            return WalkState::Continue;
+                        }
 
                         let mut stop = false;
                         let sink = sinks::UTF8(|line_num, _line_content| {
@@ -5620,7 +5618,7 @@ fn reorder_selection_contents(cx: &mut Context, strategy: ReorderStrategy) {
             (selection.primary_index() + ranges.len() - rotate_by) % ranges.len()
         }
         ReorderStrategy::Reverse => {
-            if rotate_by % 2 == 0 {
+            if rotate_by.is_multiple_of(2) {
                 // nothing changed, if we reverse something an even
                 // amount of times, the output will be the same
                 return;
@@ -7030,6 +7028,7 @@ fn jump_to_label(cx: &mut Context, labels: Vec<Range>, behaviour: Movement) {
                 } else {
                     range.with_direction(Direction::Forward)
                 };
+                save_selection(cx);
                 doc_mut!(cx.editor, &doc).set_selection(view, range.into());
             }
         });

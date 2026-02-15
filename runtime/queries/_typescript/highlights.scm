@@ -64,6 +64,10 @@
   (array_pattern
     (identifier) @variable.parameter))
 
+(public_field_definition) @punctuation.special
+(this_type) @variable.builtin
+(type_predicate) @keyword.operator
+
 ; Punctuation
 ; -----------
 
@@ -75,6 +79,7 @@
 (property_signature "?" @punctuation.special)
 
 (conditional_type ["?" ":"] @operator)
+(ternary_expression ["?" ":"] @operator)
 
 ; Keywords
 ; --------
@@ -82,6 +87,7 @@
 [
   "abstract"
   "declare"
+  "module"
   "export"
   "infer"
   "implements"
@@ -127,9 +133,16 @@
     ">"
   ] @punctuation.bracket)
 
+(omitting_type_annotation) @punctuation.special
+(opting_type_annotation) @punctuation.special
+
 ; Literals
 ; --------
 
 [
   (template_literal_type)
 ] @string
+
+(import_require_clause
+  (identifier) "="
+  ("require") @keyword)

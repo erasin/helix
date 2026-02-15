@@ -1,5 +1,5 @@
 ; Comments
-(tripledot) @comment.discard
+(tripledot) @comment.unused
 
 [(comment) (line_comment) (shebang)] @comment
 
@@ -114,20 +114,6 @@
   ] @comment.block.documentation)
  (#any-of? @keyword "doc" "moduledoc"))
 
-; Ignored variables
-((variable) @comment.discard
- (#match? @comment.discard "^_"))
-
-; Macros
-(macro
-  "?"+ @constant
-  name: (_) @constant
-  !arguments)
-
-(macro
-  "?"+ @keyword.directive
-  name: (_) @keyword.directive)
-
 ; Parameters
 ; specs
 ((attribute
@@ -163,3 +149,17 @@
 
 (record field: (atom) @variable.other.member)
 (record name: (atom) @type)
+
+; Ignored variables
+((variable) @comment.unused
+ (#match? @comment.unused "^_"))
+
+; Macros
+(macro
+  "?"+ @keyword.directive
+  name: (_) @keyword.directive)
+
+(macro
+  "?"+ @constant
+  name: (_) @constant
+  !arguments)

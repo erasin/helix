@@ -28,6 +28,7 @@ mod document_links;
 mod prompt;
 mod signature_help;
 mod snippet;
+mod workspace_trust;
 
 pub fn setup(config: Arc<ArcSwap<Config>>) -> Handlers {
     events::register();
@@ -66,6 +67,7 @@ pub fn setup(config: Arc<ArcSwap<Config>>) -> Handlers {
     document_colors::register_hooks(&handlers);
     document_links::register_hooks(&handlers);
     prompt::register_hooks(&handlers);
+    workspace_trust::register_hooks(&handlers);
     blame::register_hooks(&handlers);
     auto_reload::register_hooks(&handlers, &config.load().editor);
     handlers

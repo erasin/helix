@@ -1026,18 +1026,18 @@ fn theme(cx: &mut compositor::Context, args: Args, event: PromptEvent) -> anyhow
     let true_color = cx.editor.config.load().true_color || crate::true_color();
     match event {
         PromptEvent::Abort => {
-            cx.editor.unset_theme_preview();
+            cx.editor.unset_theme_preview()?;
         }
         PromptEvent::Update => {
             if args.is_empty() {
                 // Ensures that a preview theme gets cleaned up if the user backspaces until the prompt is empty.
-                cx.editor.unset_theme_preview();
+                cx.editor.unset_theme_preview()?;
             } else if let Some(theme_name) = args.first() {
                 if let Ok(theme) = cx.editor.theme_loader.load(theme_name) {
                     if !(true_color || theme.is_16_color()) {
                         bail!("Unsupported theme: theme requires true color support");
                     }
-                    cx.editor.set_theme_preview(theme);
+                    cx.editor.set_theme_preview(theme)?;
                 };
             };
         }
@@ -1051,8 +1051,7 @@ fn theme(cx: &mut compositor::Context, args: Args, event: PromptEvent) -> anyhow
                 if !(true_color || theme.is_16_color()) {
                     bail!("Unsupported theme: theme requires true color support");
                 }
-                cx.editor.set_theme(theme);
-                cx.editor.config_events.0.send(ConfigEvent::ThemeChanged)?;
+                cx.editor.set_theme(theme)?;
             } else {
                 let name = cx.editor.theme.name().to_string();
 
@@ -4082,6 +4081,22 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
+    TypableCommand {
+        name: "workspace-trust",
+        aliases: &[],
+        doc: "Add current workspace to the list of trusted workspaces.",
+        fun: trust_workspace,
+        completer: CommandCompleter::none(),
+        signature: Signature { positionals: (0, None), ..Signature::DEFAULT },
+    },
+    TypableCommand {
+        name: "workspace-untrust",
+        aliases: &[],
+        doc: "Remove current workspace from the list of trusted workspaces.",
+        fun: untrust_workspace,
+        completer: CommandCompleter::none(),
+        signature: Signature { positionals: (0, None), ..Signature::DEFAULT },
+    }
 ];
 
 pub static TYPABLE_COMMAND_MAP: Lazy<HashMap<&'static str, &'static TypableCommand>> =
@@ -4491,4 +4506,33 @@ fn complete_expansion_kind(content: &str, offset: usize) -> Vec<ui::prompt::Comp
     .into_iter()
     .map(|(name, _)| (offset.., (*name).into()))
     .collect()
+}
+
+fn trust_workspace(
+    cx: &mut compositor::Context,
+    args: Args<'_>,
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+
+    helix_loader::workspace_trust::WorkspaceTrust::load(false).trust_workspace();
+
+    cx.editor.config_events.0.send(ConfigEvent::Refresh)?;
+    // HACK
+    lsp_restart(cx, args, event)
+}
+
+fn untrust_workspace(
+    _cx: &mut compositor::Context,
+    _args: Args<'_>,
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+
+    helix_loader::workspace_trust::WorkspaceTrust::load(false).untrust_workspace();
+    Ok(())
 }

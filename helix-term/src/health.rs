@@ -163,7 +163,7 @@ fn languages(selection: Option<HashSet<String>>) -> std::io::Result<()> {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
 
-    let mut syn_loader_conf = match user_lang_config() {
+    let mut syn_loader_conf = match user_lang_config(false) {
         Ok(conf) => conf,
         Err(err) => {
             let stderr = std::io::stderr();
@@ -283,7 +283,7 @@ pub fn language(lang_str: String) -> std::io::Result<()> {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
 
-    let syn_loader_conf = match user_lang_config() {
+    let syn_loader_conf = match user_lang_config(false) {
         Ok(conf) => conf,
         Err(err) => {
             let stderr = std::io::stderr();
@@ -365,8 +365,8 @@ fn probe_parser(grammar_name: &str) -> std::io::Result<()> {
     write!(stdout, "Tree-sitter parser: ")?;
 
     match helix_loader::grammar::get_language(grammar_name) {
-        Ok(_) => writeln!(stdout, "{}", "✓".green()),
-        Err(_) => writeln!(stdout, "{}", "None".yellow()),
+        Ok(Some(_)) => writeln!(stdout, "{}", "✓".green()),
+        Ok(None) | Err(_) => writeln!(stdout, "{}", "None".yellow()),
     }
 }
 

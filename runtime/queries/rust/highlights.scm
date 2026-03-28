@@ -79,11 +79,7 @@
 ; Types
 ; -------
 
-(type_parameters
-  (type_identifier) @type.parameter)
-(constrained_type_parameter
-  left: (type_identifier) @type.parameter)
-(optional_type_parameter
+(type_parameter
   name: (type_identifier) @type.parameter)
 ((type_arguments (type_identifier) @constant)
  (#match? @constant "^[A-Z_]+$"))
@@ -116,6 +112,7 @@
 ; Comments
 ; -------
 
+(shebang) @comment
 (line_comment) @comment.line
 (block_comment) @comment.block
 
@@ -211,6 +208,23 @@
 (closure_parameters
 	(identifier) @variable.parameter)
 
+; Mutable variables
+
+(let_declaration
+  (mutable_specifier)
+  pattern: (identifier) @variable.mutable)
+(mut_pattern
+  (mutable_specifier)
+  (identifier) @variable.mutable)
+
+(parameter
+  (mutable_specifier)
+  pattern: (identifier) @variable.parameter.mutable)
+
+(self_parameter
+  (mutable_specifier)
+  (self) @variable.builtin.mutable)
+
 ; -------
 ; Keywords
 ; -------
@@ -242,10 +256,6 @@
 (use_as_clause "as" @keyword.control.import)
 
 (type_cast_expression "as" @keyword.operator)
-
-((generic_type
-    type: (type_identifier) @keyword)
- (#eq? @keyword "use"))
 
 [
   (crate)
@@ -293,8 +303,6 @@
   "move"
   "dyn"
 ] @keyword.storage.modifier
-
-; TODO: variable.mut to highlight mutable identifiers via locals.scm
 
 ; ---
 ; Remaining Paths

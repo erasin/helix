@@ -1,18 +1,19 @@
 use std::io::{self, Write as _};
 
 use helix_view::{
+    editor::KittyKeyboardProtocolConfig,
     graphics::{CursorKind, Rect, UnderlineStyle},
-    theme::{Color, Modifier},
+    theme::{self, Color, Modifier},
 };
 use termina::{
     escape::{
         csi::{self, Csi, SgrAttributes, SgrModifiers},
         dcs::{self, Dcs},
+        osc::{self, Osc},
     },
     style::{CursorStyle, RgbColor},
     Event, OneBased, PlatformTerminal, Terminal as _, WindowSize,
 };
-use termini::TermInfo;
 
 use crate::{buffer::Cell, terminal::Config};
 
@@ -45,21 +46,6 @@ fn term_program() -> Option<String> {
 fn vte_version() -> Option<usize> {
     std::env::var("VTE_VERSION").ok()?.parse().ok()
 }
-fn reset_cursor_approach(terminfo: TermInfo) -> String {
-    let mut reset_str = Csi::Cursor(csi::Cursor::CursorStyle(CursorStyle::Default)).to_string();
-
-    if let Some(termini::Value::Utf8String(se_str)) = terminfo.extended_cap("Se") {
-        reset_str.push_str(se_str);
-    };
-
-    reset_str.push_str(
-        terminfo
-            .utf8_string_cap(termini::StringCapability::CursorNormal)
-            .unwrap_or(""),
-    );
-
-    reset_str
-}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct Capabilities {
@@ -67,6 +53,9 @@ struct Capabilities {
     synchronized_output: bool,
     true_color: bool,
     extended_underlines: bool,
+    /// OSC11 / OSC111 - change the terminal's background color.
+    dynamic_background_color: bool,
+    theme_mode: Option<theme::Mode>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -90,54 +79,18 @@ pub struct TerminaBackend {
     capabilities: Capabilities,
     reset_cursor_command: String,
     is_synchronized_output_set: bool,
+    /// The requested terminal background color, set in `Self::set_background_color`.
+    background_color: Option<RgbColor>,
+    /// The terminal emulator's background color. This is queried when claiming the terminal so
+    /// that custom colors set outside of Helix with OSC11 are restored when Helix exits.
+    original_background_color: Option<RgbColor>,
 }
 
 impl TerminaBackend {
     pub fn new(config: Config) -> io::Result<Self> {
-        let mut terminal = PlatformTerminal::new()?;
-        let (capabilities, reset_cursor_command) =
-            Self::detect_capabilities(&mut terminal, &config)?;
-
-        // In the case of a panic, reset the terminal eagerly. If we didn't do this and instead
-        // relied on `Drop`, the backtrace would be lost because it is printed before we would
-        // clear and exit the alternate screen.
-        let hook_reset_cursor_command = reset_cursor_command.clone();
-        terminal.set_panic_hook(move |term| {
-            let _ = write!(
-                term,
-                "{}{}{}{}{}{}{}{}{}{}{}",
-                Csi::Keyboard(csi::Keyboard::PopFlags(1)),
-                decreset!(MouseTracking),
-                decreset!(ButtonEventMouse),
-                decreset!(AnyEventMouse),
-                decreset!(RXVTMouse),
-                decreset!(SGRMouse),
-                &hook_reset_cursor_command,
-                decreset!(BracketedPaste),
-                decreset!(FocusTracking),
-                Csi::Edit(csi::Edit::EraseInDisplay(csi::EraseInDisplay::EraseDisplay)),
-                decreset!(ClearAndEnableAlternateScreen),
-            );
-        });
-
-        Ok(Self {
-            terminal,
-            config,
-            capabilities,
-            reset_cursor_command,
-            is_synchronized_output_set: false,
-        })
-    }
-
-    pub fn terminal(&self) -> &PlatformTerminal {
-        &self.terminal
-    }
-
-    fn detect_capabilities(
-        terminal: &mut PlatformTerminal,
-        config: &Config,
-    ) -> io::Result<(Capabilities, String)> {
         use std::time::{Duration, Instant};
+
+        let mut terminal = PlatformTerminal::new()?;
 
         // Colibri "midnight"
         const TEST_COLOR: RgbColor = RgbColor::new(59, 34, 76);
@@ -145,7 +98,20 @@ impl TerminaBackend {
         terminal.enter_raw_mode()?;
 
         let mut capabilities = Capabilities::default();
+        let mut original_background_color = None;
         let start = Instant::now();
+
+        // HACK: emitting OSC11 / OSC111 seems to break SGR and cause flickering in tmux.
+        capabilities.dynamic_background_color = std::env::var_os("TMUX").is_none();
+
+        capabilities.kitty_keyboard = match config.kitty_keyboard_protocol {
+            KittyKeyboardProtocolConfig::Disabled => KittyKeyboardSupport::None,
+            KittyKeyboardProtocolConfig::Enabled => KittyKeyboardSupport::Full,
+            KittyKeyboardProtocolConfig::Auto => {
+                write!(terminal, "{}", Csi::Keyboard(csi::Keyboard::QueryFlags))?;
+                KittyKeyboardSupport::None
+            }
+        };
 
         // Many terminal extensions can be detected by querying the terminal for the state of the
         // extension and then sending a request for the primary device attributes (which is
@@ -154,19 +120,23 @@ impl TerminaBackend {
         // If we only receive the device attributes then we know it is not.
         write!(
             terminal,
-            "{}{}{}{}{}{}{}",
-            // Kitty keyboard
-            Csi::Keyboard(csi::Keyboard::QueryFlags),
+            "{}{}{}{}{}{}{}{}",
             // Synchronized output
             Csi::Mode(csi::Mode::QueryDecPrivateMode(csi::DecPrivateMode::Code(
                 csi::DecPrivateModeCode::SynchronizedOutput
             ))),
+            // Mode 2031 theme updates. Query the current theme.
+            Csi::Mode(csi::Mode::QueryTheme),
             // True color and while we're at it, extended underlines:
             // <https://github.com/termstandard/colors?tab=readme-ov-file#querying-the-terminal>
             Csi::Sgr(csi::Sgr::Background(TEST_COLOR.into())),
             Csi::Sgr(csi::Sgr::UnderlineColor(TEST_COLOR.into())),
             Dcs::Request(dcs::DcsRequest::GraphicRendition),
             Csi::Sgr(csi::Sgr::Reset),
+            Osc::ChangeDynamicColors(
+                osc::DynamicColorNumber::TextBackgroundColor,
+                vec![osc::ColorOrQuery::Query]
+            ),
             // Finally request the primary device attributes
             Csi::Device(csi::Device::RequestPrimaryDeviceAttributes),
         )?;
@@ -192,6 +162,17 @@ impl TerminaBackend {
                     })) => {
                         capabilities.synchronized_output = true;
                     }
+                    Event::Csi(Csi::Mode(csi::Mode::ReportTheme(mode))) => {
+                        capabilities.theme_mode = Some(mode.into());
+                    }
+                    Event::Osc(Osc::ChangeDynamicColors(
+                        osc::DynamicColorNumber::TextBackgroundColor,
+                        colors,
+                    )) => {
+                        if let Some(osc::ColorOrQuery::Color(color)) = colors.first() {
+                            original_background_color = Some(*color);
+                        }
+                    }
                     Event::Dcs(dcs::Dcs::Response {
                         value: dcs::DcsResponse::GraphicRendition(sgrs),
                         ..
@@ -216,7 +197,8 @@ impl TerminaBackend {
 
         capabilities.extended_underlines |= config.force_enable_extended_underlines;
 
-        let reset_cursor_approach = if let Ok(t) = termini::TermInfo::from_env() {
+        let mut reset_cursor_command = String::new();
+        if let Ok(t) = termini::TermInfo::from_env() {
             capabilities.extended_underlines |= t.extended_cap("Smulx").is_some()
                 || t.extended_cap("Su").is_some()
                 || vte_version() >= Some(5102)
@@ -224,14 +206,60 @@ impl TerminaBackend {
                 // <https://github.com/wezterm/wezterm/pull/6856>
                 || matches!(term_program().as_deref(), Some("WezTerm"));
 
-            reset_cursor_approach(t)
+            if let Some(termini::Value::Utf8String(se_str)) = t.extended_cap("Se") {
+                reset_cursor_command.push_str(se_str);
+            };
+            reset_cursor_command.push_str(
+                t.utf8_string_cap(termini::StringCapability::CursorNormal)
+                    .unwrap_or(""),
+            );
+            log::debug!(
+                "Cursor reset escape sequence detected from terminfo: {reset_cursor_command:?}"
+            );
         } else {
-            Csi::Cursor(csi::Cursor::CursorStyle(CursorStyle::Default)).to_string()
-        };
+            log::debug!("terminfo could not be read, using default cursor reset escape sequence: {reset_cursor_command:?}");
+        }
+        reset_cursor_command
+            .push_str(&Csi::Cursor(csi::Cursor::CursorStyle(CursorStyle::Default)).to_string());
 
         terminal.enter_cooked_mode()?;
 
-        Ok((capabilities, reset_cursor_approach))
+        // In the case of a panic, reset the terminal eagerly. If we didn't do this and instead
+        // relied on `Drop`, the backtrace would be lost because it is printed before we would
+        // clear and exit the alternate screen.
+        let hook_reset_cursor_command = reset_cursor_command.clone();
+        terminal.set_panic_hook(move |term| {
+            let _ = write!(
+                term,
+                "{}{}{}{}{}{}{}{}{}{}{}{}",
+                Csi::Keyboard(csi::Keyboard::PopFlags(1)),
+                decreset!(MouseTracking),
+                decreset!(ButtonEventMouse),
+                decreset!(AnyEventMouse),
+                decreset!(RXVTMouse),
+                decreset!(SGRMouse),
+                &hook_reset_cursor_command,
+                decreset!(BracketedPaste),
+                decreset!(FocusTracking),
+                Osc::ResetDynamicColor(osc::DynamicColorNumber::TextBackgroundColor),
+                Csi::Edit(csi::Edit::EraseInDisplay(csi::EraseInDisplay::EraseDisplay)),
+                decreset!(ClearAndEnableAlternateScreen),
+            );
+        });
+
+        Ok(Self {
+            terminal,
+            config,
+            capabilities,
+            reset_cursor_command,
+            is_synchronized_output_set: false,
+            background_color: None,
+            original_background_color,
+        })
+    }
+
+    pub fn terminal(&self) -> &PlatformTerminal {
+        &self.terminal
     }
 
     fn enable_mouse_capture(&mut self) -> io::Result<()> {
@@ -262,6 +290,20 @@ impl TerminaBackend {
             )?;
         }
         Ok(())
+    }
+
+    fn reset_background_color(&mut self) -> io::Result<()> {
+        write!(
+            self.terminal,
+            "{}",
+            match self.original_background_color {
+                Some(color) => Osc::ChangeDynamicColors(
+                    osc::DynamicColorNumber::TextBackgroundColor,
+                    vec![color.into()]
+                ),
+                None => Osc::ResetDynamicColor(osc::DynamicColorNumber::TextBackgroundColor),
+            }
+        )
     }
 
     fn enable_extensions(&mut self) -> io::Result<()> {
@@ -317,6 +359,11 @@ impl TerminaBackend {
             }
         }
 
+        if self.capabilities.theme_mode.is_some() {
+            // Enable mode 2031 theme mode notifications:
+            write!(self.terminal, "{}", decset!(Theme))?;
+        }
+
         Ok(())
     }
 
@@ -327,6 +374,11 @@ impl TerminaBackend {
                 "{}",
                 Csi::Keyboard(csi::Keyboard::PopFlags(1))
             )?;
+        }
+
+        if self.capabilities.theme_mode.is_some() {
+            // Mode 2031 theme notifications.
+            write!(self.terminal, "{}", decreset!(Theme))?;
         }
 
         Ok(())
@@ -370,6 +422,16 @@ impl Backend for TerminaBackend {
             // things like mosh are buggy. See <https://github.com/helix-editor/helix/pull/1944>.
             Csi::Edit(csi::Edit::EraseInDisplay(csi::EraseInDisplay::EraseDisplay)),
         )?;
+        if let Some(color) = self.background_color {
+            write!(
+                self.terminal,
+                "{}",
+                Osc::ChangeDynamicColors(
+                    osc::DynamicColorNumber::TextBackgroundColor,
+                    vec![color.into()]
+                )
+            )?;
+        }
         self.enable_mouse_capture()?;
         self.enable_extensions()?;
 
@@ -400,6 +462,9 @@ impl Backend for TerminaBackend {
             decreset!(FocusTracking),
             decreset!(ClearAndEnableAlternateScreen),
         )?;
+        if self.background_color.is_some() {
+            self.reset_background_color()?;
+        }
         self.terminal.flush()?;
         self.terminal.enter_cooked_mode()?;
         Ok(())
@@ -547,6 +612,32 @@ impl Backend for TerminaBackend {
     fn supports_true_color(&self) -> bool {
         self.capabilities.true_color
     }
+
+    fn get_theme_mode(&self) -> Option<theme::Mode> {
+        self.capabilities.theme_mode
+    }
+
+    fn set_background_color(&mut self, color: Option<Color>) -> io::Result<()> {
+        if !self.capabilities.dynamic_background_color {
+            return Ok(());
+        }
+        self.background_color = match color {
+            Some(Color::Rgb(r, g, b)) => Some(RgbColor::new(r, g, b)),
+            _ => None,
+        };
+        if let Some(color) = self.background_color {
+            write!(
+                self.terminal,
+                "{}",
+                Osc::ChangeDynamicColors(
+                    osc::DynamicColorNumber::TextBackgroundColor,
+                    vec![color.into()]
+                )
+            )
+        } else {
+            self.reset_background_color()
+        }
+    }
 }
 
 impl Drop for TerminaBackend {
@@ -564,6 +655,9 @@ impl Drop for TerminaBackend {
                 decreset!(FocusTracking),
                 decreset!(ClearAndEnableAlternateScreen),
             );
+            if self.background_color.is_some() {
+                let _ = self.reset_background_color();
+            }
             // NOTE: Drop for Platform terminal resets the mode and flushes the buffer when not
             // panicking.
         }
@@ -577,8 +671,11 @@ fn diff_modifiers(from: Modifier, to: Modifier) -> SgrModifiers {
     if removed.contains(Modifier::REVERSED) {
         modifiers |= SgrModifiers::NO_REVERSE;
     }
-    if removed.contains(Modifier::BOLD) && !to.contains(Modifier::DIM) {
+    if removed.contains(Modifier::BOLD) {
         modifiers |= SgrModifiers::INTENSITY_NORMAL;
+        if to.contains(Modifier::DIM) {
+            modifiers |= SgrModifiers::INTENSITY_DIM
+        }
     }
     if removed.contains(Modifier::DIM) {
         modifiers |= SgrModifiers::INTENSITY_NORMAL;

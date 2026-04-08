@@ -6,7 +6,7 @@ on:
       - master
 
 env:
-  MSRV: "1.87"
+  MSRV: "1.90"
   # This key can be changed to bust the cache of tree-sitter grammars.
   GRAMMAR_CACHE_VERSION: ""
 

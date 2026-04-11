@@ -127,8 +127,8 @@ pub fn hook_insert(
             // && char_at pos == close
             return handle_insert_close(doc, range, pair);
         }
-    } else if ch.is_whitespace() {
-        return handle_insert_whitespace(doc, range, ch, pairs);
+    // } else if ch.is_whitespace() {
+    //     return handle_insert_whitespace(doc, range, ch, pairs);
     }
 
     None

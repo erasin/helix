@@ -1,7 +1,5 @@
-use std::borrow::Cow;
-
 use helix_core::indent::IndentStyle;
-use helix_core::{coords_at_pos, encoding, Position};
+use helix_core::{coords_at_pos, encoding, unicode::width::UnicodeWidthStr, Position};
 use helix_lsp::lsp::DiagnosticSeverity;
 use helix_view::document::DEFAULT_LANGUAGE_NAME;
 use helix_view::{
@@ -169,18 +167,16 @@ where
     let visible = context.focused;
     let config = context.editor.config();
     let modenames = &config.statusline.mode;
+    let mode_str = match context.editor.mode() {
+        Mode::Insert => &modenames.insert,
+        Mode::Select => &modenames.select,
+        Mode::Normal => &modenames.normal,
+    };
     let content = if visible {
-        Cow::Owned(format!(
-            " {} ",
-            match context.editor.mode() {
-                Mode::Insert => &modenames.insert,
-                Mode::Select => &modenames.select,
-                Mode::Normal => &modenames.normal,
-            }
-        ))
+        format!(" {mode_str} ")
     } else {
         // If not focused, explicitly leave an empty space instead of returning None.
-        Cow::Borrowed("     ")
+        " ".repeat(mode_str.width() + 2)
     };
     let style = if visible && config.color_modes {
         match context.editor.mode() {
@@ -194,16 +190,16 @@ where
     write(context, Span::styled(content, style));
 }
 
-// TODO think about handling multiple language servers
 fn render_lsp_spinner<'a, F>(context: &mut RenderContext<'a>, write: F)
 where
     F: Fn(&mut RenderContext<'a>, Span<'a>) + Copy,
 {
-    let language_server = context.doc.language_servers().next();
     write(
         context,
-        language_server
-            .and_then(|srv| {
+        context
+            .doc
+            .language_servers()
+            .find_map(|srv| {
                 context
                     .spinners
                     .get(srv.id())

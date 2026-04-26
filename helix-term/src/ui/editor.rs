@@ -139,9 +139,18 @@ impl EditorView {
             }
         }
 
+        if let Some(overlay) = Self::doc_document_link_highlights(doc, theme) {
+            overlays.push(overlay);
+        }
+
         Self::doc_diagnostics_highlights_into(doc, theme, &mut overlays);
 
         if is_focused {
+            if config.lsp.auto_document_highlight {
+                if let Some(overlay) = Self::doc_document_highlights(doc, view, theme) {
+                    overlays.push(overlay);
+                }
+            }
             if let Some(tabstops) = Self::tabstop_highlights(doc, theme) {
                 overlays.push(tabstops);
             }
@@ -459,6 +468,60 @@ impl EditorView {
         ]);
     }
 
+    pub fn doc_document_highlights(
+        doc: &Document,
+        view: &View,
+        theme: &Theme,
+    ) -> Option<OverlayHighlights> {
+        let ranges = doc.document_highlights(view.id)?;
+        if ranges.is_empty() {
+            return None;
+        }
+
+        let highlight = theme
+            .find_highlight_exact("ui.highlight")
+            .or_else(|| theme.find_highlight_exact("ui.selection"))
+            .or_else(|| theme.find_highlight_exact("ui.cursor"))?;
+
+        Some(OverlayHighlights::Homogeneous {
+            highlight,
+            ranges: ranges.to_vec(),
+        })
+    }
+
+    pub fn doc_document_link_highlights(
+        doc: &Document,
+        theme: &Theme,
+    ) -> Option<OverlayHighlights> {
+        let highlight = theme
+            .find_highlight_exact("markup.link.url")
+            .or_else(|| theme.find_highlight_exact("markup.link"))?;
+
+        if doc.document_links.is_empty() {
+            return None;
+        }
+
+        let mut ranges: Vec<ops::Range<usize>> = Vec::new();
+        for link in &doc.document_links {
+            if link.start >= link.end {
+                continue;
+            }
+
+            match ranges.last_mut() {
+                Some(existing_range) if link.start <= existing_range.end => {
+                    existing_range.end = existing_range.end.max(link.end);
+                }
+                _ => ranges.push(link.start..link.end),
+            }
+        }
+
+        if ranges.is_empty() {
+            return None;
+        }
+
+        Some(OverlayHighlights::Homogeneous { highlight, ranges })
+    }
+
     /// Get highlight spans for selections in a document view.
     pub fn doc_selection_highlights(
         mode: Mode,
@@ -538,7 +601,7 @@ impl EditorView {
                     };
                 spans.push((selection_scope, range.anchor..selection_end));
                 // add block cursors
-                // skip primary cursor if terminal is unfocused - crossterm cursor is used in that case
+                // skip primary cursor if terminal is unfocused - terminal cursor is used in that case
                 if !selection_is_primary || (cursor_is_block && is_terminal_focused) {
                     spans.push((cursor_scope, cursor_start..range.head));
                 }
@@ -546,7 +609,7 @@ impl EditorView {
                 // Reverse case.
                 let cursor_end = next_grapheme_boundary(text, range.head);
                 // add block cursors
-                // skip primary cursor if terminal is unfocused - crossterm cursor is used in that case
+                // skip primary cursor if terminal is unfocused - terminal cursor is used in that case
                 if !selection_is_primary || (cursor_is_block && is_terminal_focused) {
                     spans.push((cursor_scope, range.head..cursor_end));
                 }
@@ -1159,6 +1222,8 @@ impl EditorView {
                 let editor = &mut cxt.editor;
 
                 if let Some((pos, view_id)) = pos_and_view(editor, row, column, true) {
+                    editor.focus(view_id);
+
                     let prev_view_id = view!(editor).id;
                     let doc = doc_mut!(editor, &view!(editor, view_id).doc);
 
@@ -1182,7 +1247,6 @@ impl EditorView {
                         self.clear_completion(editor);
                     }
 
-                    editor.focus(view_id);
                     editor.ensure_cursor_in_view(view_id);
 
                     return EventResult::Consumed(None);
@@ -1271,8 +1335,10 @@ impl EditorView {
                 };
 
                 if should_yank {
-                    commands::MappableCommand::yank_main_selection_to_primary_clipboard
-                        .execute(cxt);
+                    commands::yank_main_selection_to_register(
+                        cxt.editor,
+                        config.mouse_yank_register,
+                    );
                     EventResult::Consumed(None)
                 } else {
                     EventResult::Ignored(None)
@@ -1312,8 +1378,11 @@ impl EditorView {
                 }
 
                 if modifiers == KeyModifiers::ALT {
-                    commands::MappableCommand::replace_selections_with_primary_clipboard
-                        .execute(cxt);
+                    commands::replace_selections_with_register(
+                        cxt.editor,
+                        config.mouse_yank_register,
+                        cxt.count(),
+                    );
 
                     return EventResult::Consumed(None);
                 }
@@ -1322,7 +1391,13 @@ impl EditorView {
                     let doc = doc_mut!(editor, &view!(editor, view_id).doc);
                     doc.set_selection(view_id, Selection::point(pos));
                     cxt.editor.focus(view_id);
-                    commands::MappableCommand::paste_primary_clipboard_before.execute(cxt);
+
+                    commands::paste(
+                        cxt.editor,
+                        config.mouse_yank_register,
+                        commands::Paste::Before,
+                        cxt.count(),
+                    );
 
                     return EventResult::Consumed(None);
                 }
@@ -1630,7 +1705,7 @@ impl Component for EditorView {
                 if self.terminal_focused {
                     (pos, CursorKind::Hidden)
                 } else {
-                    // use crossterm cursor when terminal loses focus
+                    // use terminal cursor when terminal loses focus
                     (pos, CursorKind::Underline)
                 }
             }

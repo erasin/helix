@@ -1,4 +1,4 @@
-use futures_util::{stream::FuturesOrdered, FutureExt};
+use futures_util::{stream::FuturesUnordered, FutureExt};
 use helix_lsp::{
     block_on,
     lsp::{
@@ -100,7 +100,7 @@ struct PickerDiagnostic {
     diag: lsp::Diagnostic,
 }
 
-fn location_to_file_location(location: &Location) -> Option<FileLocation> {
+fn location_to_file_location(location: &Location) -> Option<FileLocation<'_>> {
     let path = location.uri.as_path()?;
     let line = Some((
         location.range.start.line as usize,
@@ -341,7 +341,7 @@ pub fn symbol_picker(cx: &mut Context) {
 
     let mut seen_language_servers = HashSet::new();
 
-    let mut futures: FuturesOrdered<_> = doc
+    let mut futures: FuturesUnordered<_> = doc
         .language_servers_with_feature(LanguageServerFeature::DocumentSymbols)
         .filter(|ls| seen_language_servers.insert(ls.id()))
         .map(|language_server| {
@@ -460,7 +460,7 @@ pub fn workspace_symbol_picker(cx: &mut Context) {
     let get_symbols = |pattern: &str, editor: &mut Editor, _data, injector: &Injector<_, _>| {
         let doc = doc!(editor);
         let mut seen_language_servers = HashSet::new();
-        let mut futures: FuturesOrdered<_> = doc
+        let mut futures: FuturesUnordered<_> = doc
             .language_servers_with_feature(LanguageServerFeature::WorkspaceSymbols)
             .filter(|ls| seen_language_servers.insert(ls.id()))
             .map(|language_server| {
@@ -589,7 +589,7 @@ struct CodeActionOrCommandItem {
 
 impl ui::menu::Item for CodeActionOrCommandItem {
     type Data = ();
-    fn format(&self, _data: &Self::Data) -> Row {
+    fn format(&self, _data: &Self::Data) -> Row<'_> {
         match &self.lsp_item {
             lsp::CodeActionOrCommand::CodeAction(action) => action.title.as_str().into(),
             lsp::CodeActionOrCommand::Command(command) => command.title.as_str().into(),
@@ -661,7 +661,7 @@ pub fn code_action(cx: &mut Context) {
 
     let mut seen_language_servers = HashSet::new();
 
-    let mut futures: FuturesOrdered<_> = doc
+    let mut futures: FuturesUnordered<_> = doc
         .language_servers_with_feature(LanguageServerFeature::CodeAction)
         .filter(|ls| seen_language_servers.insert(ls.id()))
         // TODO this should probably already been filtered in something like "language_servers_with_feature"
@@ -890,7 +890,7 @@ where
     F: Future<Output = helix_lsp::Result<Option<lsp::GotoDefinitionResponse>>> + 'static + Send,
 {
     let (view, doc) = current_ref!(cx.editor);
-    let mut futures: FuturesOrdered<_> = doc
+    let mut futures: FuturesUnordered<_> = doc
         .language_servers_with_feature(feature)
         .map(|language_server| {
             let offset_encoding = language_server.offset_encoding();
@@ -935,7 +935,13 @@ where
         }
         let call = move |editor: &mut Editor, compositor: &mut Compositor| {
             if locations.is_empty() {
-                editor.set_error("No definition found.");
+                editor.set_error(match feature {
+                    LanguageServerFeature::GotoDeclaration => "No declaration found.",
+                    LanguageServerFeature::GotoDefinition => "No definition found.",
+                    LanguageServerFeature::GotoTypeDefinition => "No type definition found.",
+                    LanguageServerFeature::GotoImplementation => "No implementation found.",
+                    _ => "No location found.",
+                });
             } else {
                 goto_impl(editor, compositor, locations);
             }
@@ -980,7 +986,7 @@ pub fn goto_reference(cx: &mut Context) {
     let config = cx.editor.config();
     let (view, doc) = current_ref!(cx.editor);
 
-    let mut futures: FuturesOrdered<_> = doc
+    let mut futures: FuturesUnordered<_> = doc
         .language_servers_with_feature(LanguageServerFeature::GotoReference)
         .map(|language_server| {
             let offset_encoding = language_server.offset_encoding();
@@ -1042,7 +1048,7 @@ pub fn hover(cx: &mut Context) {
     }
 
     let mut seen_language_servers = HashSet::new();
-    let mut futures: FuturesOrdered<_> = doc
+    let mut futures: FuturesUnordered<_> = doc
         .language_servers_with_feature(LanguageServerFeature::Hover)
         .filter(|ls| seen_language_servers.insert(ls.id()))
         .map(|language_server| {
@@ -1140,7 +1146,7 @@ pub fn rename_symbol(cx: &mut Context) {
 
                 let Some(language_server) = doc
                     .language_servers_with_feature(LanguageServerFeature::RenameSymbol)
-                    .find(|ls| language_server_id.map_or(true, |id| id == ls.id()))
+                    .find(|ls| language_server_id.is_none_or(|id| id == ls.id()))
                 else {
                     cx.editor
                         .set_error("No configured language server supports symbol renaming");

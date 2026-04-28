@@ -172,6 +172,10 @@ pub fn workspace_exclude_file() -> PathBuf {
     data_dir().join("excluded_workspaces")
 }
 
+pub fn workspace_socket_file() -> PathBuf {
+    find_workspace().0.join(".helix").join("helix.sock")
+}
+
 /// Merge two TOML documents, merging values from `right` onto `left`
 ///
 /// `merge_depth` sets the nesting depth up to which values are merged instead

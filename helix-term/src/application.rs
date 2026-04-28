@@ -80,7 +80,7 @@ pub struct Application {
 
     theme_mode: Option<theme::Mode>,
     #[cfg(unix)]
-    socket_rx: mpsc::Receiver<String>
+    socket_rx: Option<mpsc::Receiver<String>>
 }
 
 #[cfg(feature = "integration")]
@@ -106,33 +106,13 @@ fn setup_integration_logging() {
 }
 
 #[cfg(unix)]
-async fn start_unix_socket_listener(tx: mpsc::Sender<String>) {
-    use std::fs::{create_dir, set_permissions, Permissions};
+async fn start_unix_socket_listener(tx: mpsc::Sender<String>, path: std::path::PathBuf) {
+    use std::fs::{remove_file, set_permissions, Permissions};
     use std::os::unix::fs::PermissionsExt;
 
-    let path = if let Ok(path) = std::env::var("HELIX_SOCKET_PATH") {
-        let path = std::path::PathBuf::from(path);
-        // Check if parent folder exists
-        if !path.parent().is_some_and(|parent| parent.exists()) {
-            eprintln!("Folder for socket {} does not exists!", path.parent().unwrap().display())
-        }
-        path
-    } else {
-        let path = std::env::var("XDG_RUNTIME_DIR")
-                .unwrap_or("/tmp".to_string());
-        let path = std::path::PathBuf::from(path)
-            .join("helix")
-            .join("helix.sock");
-        // We unwrap, as any of variants will have parent folder
-        let parent_folder = path.parent().unwrap();
-        if !parent_folder.exists() {
-            if let Err(e) = create_dir(parent_folder.to_path_buf()) {
-                eprintln!("Failed to create socket directory: {}", e);
-                return
-            }
-        }
-        path
-    };
+    if path.exists() {
+        let _ = remove_file(&path);
+    }
 
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
@@ -313,9 +293,22 @@ impl Application {
         .context("build signal handler")?;
 
         #[cfg(unix)]
-        let (socket_tx, socket_rx) = mpsc::channel::<String>(10);
-        #[cfg(unix)]
-        tokio::spawn(start_unix_socket_listener(socket_tx));
+        let socket_rx = if matches!(
+            helix_loader::workspace_trust::quick_query_workspace(config.load().editor.insecure),
+            helix_loader::workspace_trust::TrustStatus::Trusted
+        ) {
+            let (socket_tx, socket_rx) = mpsc::channel::<String>(10);
+            let path = helix_loader::workspace_socket_file();
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).ok();
+                }
+            }
+            tokio::spawn(start_unix_socket_listener(socket_tx, path));
+            Some(socket_rx)
+        } else {
+            None
+        };
 
         let app = Self {
             socket_rx,
@@ -415,7 +408,7 @@ impl Application {
                     self.editor.status_msg = Some((msg.message, severity));
                     helix_event::request_redraw();
                 }
-                Some(msg) = self.socket_rx.recv() => {
+                Some(msg) = self.socket_rx.as_mut().unwrap().recv() => {
                     self.handle_socket_command(msg.parse::<MappableCommand>()).await
                 }
                 Some(callback) = self.jobs.wait_futures.next() => {
@@ -844,16 +837,16 @@ impl Application {
             // command.execute(&mut cx);
             if let MappableCommand::Typable {name, ..} = &command {
                 if [
-                    "run-shell-command", 
-                    "write", 
-                    "write!", 
-                    "write-buffet-close", 
-                    "write-buffer-close!", 
-                    "write-quit", 
-                    "write-quit!", 
-                    "write-all", 
-                    "write-all!", 
-                    "write-quit-all", 
+                    "run-shell-command",
+                    "write",
+                    "write!",
+                    "write-buffet-close",
+                    "write-buffer-close!",
+                    "write-quit",
+                    "write-quit!",
+                    "write-all",
+                    "write-all!",
+                    "write-quit-all",
                     "write-quit-all!"
                     ].contains(&name.as_str()) {
                         let severity = Severity::Error;
@@ -872,6 +865,8 @@ impl Application {
                 jobs: &mut self.jobs
             };
             command.execute(&mut cx);
+            helix_event::request_redraw();
+            self.render().await;
         }
     }
 

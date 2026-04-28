@@ -157,6 +157,12 @@ fn handle_document_change(
     let target_view_id = editor.get_synced_view_id(doc_id);
 
     let doc = doc_mut!(editor, &doc_id);
+
+    if !doc.selections().contains_key(&target_view_id) {
+        let current_view_id = view_mut!(editor).id;
+        doc.ensure_view_init(current_view_id);
+    }
+
     let Some(path) = doc.path().cloned() else {
         return;
     };
@@ -236,7 +242,13 @@ fn prompt_reload_modified(compositor: &mut Compositor, doc_id: DocumentId, path_
                     let scrolloff = cx.editor.config().scrolloff;
                     let target_view_id = cx.editor.get_synced_view_id(doc_id);
                     let doc = doc_mut!(cx.editor, &doc_id);
-                    let view = view_mut!(cx.editor,target_view_id);
+
+                    if !doc.selections().contains_key(&target_view_id) {
+                        let current_view_id = view_mut!(cx.editor).id;
+                        doc.ensure_view_init(current_view_id);
+                    }
+
+                    let view = view_mut!(cx.editor, target_view_id);
                     match doc.reload(view, &cx.editor.diff_providers) {
                         Ok(_) => {
                             view.ensure_cursor_in_view(doc, scrolloff);

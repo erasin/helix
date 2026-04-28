@@ -16,4 +16,15 @@ xtask = "run --package xtask --"
 integration-test = "test --features integration --profile integration --workspace --test integration"
 
 [target.x86_64-unknown-linux-musl]
-rustflags = ["-C", "link-arg=-lm"]
+linker = "x86_64-linux-musl-gcc"
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-args=-static -lm"
+]
+
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-musl-gcc"
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-args=-static -lm"
+]

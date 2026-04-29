@@ -408,8 +408,10 @@ impl Application {
                     self.editor.status_msg = Some((msg.message, severity));
                     helix_event::request_redraw();
                 }
-                Some(msg) = self.socket_rx.as_mut().unwrap().recv() => {
-                    self.handle_socket_command(msg.parse::<MappableCommand>()).await
+                msg = futures_util::future::OptionFuture::from(self.socket_rx.as_mut().map(|rx| rx.recv())) => {
+                    if let Some(Some(msg)) = msg {
+                        self.handle_socket_command(msg.parse::<MappableCommand>()).await
+                    }
                 }
                 Some(callback) = self.jobs.wait_futures.next() => {
                     self.jobs.handle_callback(&mut self.editor, &mut self.compositor, callback);

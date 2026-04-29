@@ -18,6 +18,12 @@ use helix_view::{
     Align, Editor,
 };
 use serde_json::json;
+#[cfg(unix)]
+use tokio::io::AsyncReadExt;
+#[cfg(unix)]
+use tokio::net::UnixListener;
+#[cfg(unix)]
+use tokio::sync::mpsc;
 use tui::backend::Backend;
 
 use crate::{
@@ -26,12 +32,13 @@ use crate::{
     config::Config,
     handlers,
     job::Jobs,
-    keymap::Keymaps,
+    keymap::{Keymaps, MappableCommand},
     ui::{self, overlay::overlaid},
 };
 
 use log::{debug, error, info, warn};
 use std::{
+    borrow::Cow,
     io::{stdin, IsTerminal},
     path::Path,
     sync::Arc,
@@ -80,6 +87,8 @@ pub struct Application {
     lsp_progress: LspProgressMap,
 
     theme_mode: Option<theme::Mode>,
+    #[cfg(unix)]
+    socket_rx: Option<mpsc::Receiver<String>>,
 }
 
 #[cfg(feature = "integration")]
@@ -102,6 +111,45 @@ fn setup_integration_logging() {
         .level(level)
         .chain(std::io::stdout())
         .apply();
+}
+
+#[cfg(unix)]
+async fn start_unix_socket_listener(tx: mpsc::Sender<String>, path: std::path::PathBuf) {
+    use std::fs::{remove_file, set_permissions, Permissions};
+    use std::os::unix::fs::PermissionsExt;
+
+    if path.exists() {
+        let _ = remove_file(&path);
+    }
+
+    let listener = match UnixListener::bind(&path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Failed to bind listener to socket: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = set_permissions(&path, Permissions::from_mode(0o600)) {
+        eprintln!("Failed to set permissions for file: {e}")
+    }
+
+    loop {
+        match listener.accept().await {
+            Ok((mut socket, _)) => {
+                let mut buf = vec![0; 1024];
+                match socket.read(&mut buf).await {
+                    Ok(n) if n > 0 => {
+                        let msg = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let _ = tx.send(msg).await;
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Socket read error: {}", e),
+                }
+            }
+            Err(e) => eprintln!("Socket accept error: {}", e),
+        }
+    }
 }
 
 impl Application {
@@ -252,7 +300,27 @@ impl Application {
         ])
         .context("build signal handler")?;
 
+        #[cfg(unix)]
+        let socket_rx = if matches!(
+            helix_loader::workspace_trust::quick_query_workspace(config.load().editor.insecure),
+            helix_loader::workspace_trust::TrustStatus::Trusted
+        ) {
+            let (socket_tx, socket_rx) = mpsc::channel::<String>(10);
+            let path = helix_loader::workspace_socket_file();
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).ok();
+                }
+            }
+            tokio::spawn(start_unix_socket_listener(socket_tx, path));
+            Some(socket_rx)
+        } else {
+            None
+        };
+
         let app = Self {
+            #[cfg(unix)]
+            socket_rx,
             compositor,
             terminal,
             editor,
@@ -323,6 +391,15 @@ impl Application {
 
             use futures_util::StreamExt;
 
+            let socket_future = async {
+                use futures_util::future::OptionFuture;
+                #[cfg(unix)]
+                let opt: Option<_> = self.socket_rx.as_mut().map(|rx| rx.recv());
+                #[cfg(not(unix))]
+                let opt: Option<futures_util::future::Ready<Option<String>>> = None;
+                OptionFuture::from(opt).await
+            };
+
             tokio::select! {
                 biased;
 
@@ -361,6 +438,11 @@ impl Application {
                         if _idle_handled {
                             return true;
                         }
+                    }
+                }
+                msg = socket_future => {
+                    if let Some(Some(msg)) = msg {
+                        self.handle_socket_command(msg.parse::<MappableCommand>()).await
                     }
                 }
             }
@@ -762,6 +844,55 @@ impl Application {
         };
 
         if should_redraw && !self.editor.should_close() {
+            self.render().await;
+        }
+    }
+
+    pub async fn handle_socket_command(&mut self, command: anyhow::Result<MappableCommand>) {
+        if let Err(msg) = &command {
+            let severity = Severity::Error;
+            let err_string = Cow::from(msg.to_string());
+            self.editor.status_msg = Some((err_string, severity));
+            helix_event::request_redraw();
+            return;
+        }
+
+        if let Ok(command) = command {
+            // command.execute(&mut cx);
+            if let MappableCommand::Typable { name, .. } = &command {
+                if [
+                    "run-shell-command",
+                    "write",
+                    "write!",
+                    "write-buffet-close",
+                    "write-buffer-close!",
+                    "write-quit",
+                    "write-quit!",
+                    "write-all",
+                    "write-all!",
+                    "write-quit-all",
+                    "write-quit-all!",
+                ]
+                .contains(&name.as_str())
+                {
+                    let severity = Severity::Error;
+                    let err_string =
+                        Cow::from(format!("Running command {name} is forbidden from socket"));
+                    self.editor.status_msg = Some((err_string, severity));
+                    helix_event::request_redraw();
+                    return;
+                }
+            }
+            let mut cx = crate::commands::Context {
+                editor: &mut self.editor,
+                count: None,
+                register: None,
+                callback: Vec::new(),
+                on_next_key_callback: None,
+                jobs: &mut self.jobs,
+            };
+            command.execute(&mut cx);
+            helix_event::request_redraw();
             self.render().await;
         }
     }

@@ -391,7 +391,7 @@ impl Application {
                 }
                 #[cfg(not(unix))]
                 {
-                    None
+                    None::<Option<String>>
                 }
             };
 

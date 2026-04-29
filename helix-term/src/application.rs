@@ -311,6 +311,7 @@ impl Application {
         };
 
         let app = Self {
+            #[cfg(unix)]
             socket_rx,
             compositor,
             terminal,
@@ -382,6 +383,18 @@ impl Application {
 
             use futures_util::StreamExt;
 
+            let socket_future = async {
+                #[cfg(unix)]
+                {
+                    use futures_util::future::OptionFuture;
+                    OptionFuture::from(self.socket_rx.as_mut().map(|rx| rx.recv())).await
+                }
+                #[cfg(not(unix))]
+                {
+                    None
+                }
+            };
+
             tokio::select! {
                 biased;
 
@@ -408,7 +421,7 @@ impl Application {
                     self.editor.status_msg = Some((msg.message, severity));
                     helix_event::request_redraw();
                 }
-                msg = futures_util::future::OptionFuture::from(self.socket_rx.as_mut().map(|rx| rx.recv())) => {
+                msg = socket_future => {
                     if let Some(Some(msg)) = msg {
                         self.handle_socket_command(msg.parse::<MappableCommand>()).await
                     }

@@ -8,16 +8,22 @@ use helix_lsp::{
 };
 use helix_stdx::path::get_relative_path;
 use helix_view::{
-    align_view, document::{DocumentOpenError, DocumentSavedEventResult}, editor::{ConfigEvent, EditorEvent}, graphics::Rect, theme, tree::Layout, Align, Editor
+    align_view,
+    document::{DocumentOpenError, DocumentSavedEventResult},
+    editor::{ConfigEvent, EditorEvent},
+    graphics::Rect,
+    theme,
+    tree::Layout,
+    Align, Editor,
 };
 use serde_json::json;
-use tui::backend::Backend;
-#[cfg(unix)]
-use tokio::net::UnixListener;
 #[cfg(unix)]
 use tokio::io::AsyncReadExt;
 #[cfg(unix)]
+use tokio::net::UnixListener;
+#[cfg(unix)]
 use tokio::sync::mpsc;
+use tui::backend::Backend;
 
 use crate::{
     args::Args,
@@ -31,7 +37,8 @@ use crate::{
 
 use log::{debug, error, info, warn};
 use std::{
-    borrow::Cow, io::{stdin, IsTerminal},
+    borrow::Cow,
+    io::{stdin, IsTerminal},
     path::Path,
     sync::Arc,
 };
@@ -80,7 +87,7 @@ pub struct Application {
 
     theme_mode: Option<theme::Mode>,
     #[cfg(unix)]
-    socket_rx: Option<mpsc::Receiver<String>>
+    socket_rx: Option<mpsc::Receiver<String>>,
 }
 
 #[cfg(feature = "integration")]
@@ -118,7 +125,7 @@ async fn start_unix_socket_listener(tx: mpsc::Sender<String>, path: std::path::P
         Ok(l) => l,
         Err(e) => {
             eprintln!("Failed to bind listener to socket: {}", e);
-            return
+            return;
         }
     };
 
@@ -134,11 +141,11 @@ async fn start_unix_socket_listener(tx: mpsc::Sender<String>, path: std::path::P
                     Ok(n) if n > 0 => {
                         let msg = String::from_utf8_lossy(&buf[..n]).to_string();
                         let _ = tx.send(msg).await;
-                    },
-                    Ok(_) => {},
+                    }
+                    Ok(_) => {}
                     Err(e) => eprintln!("Socket read error: {}", e),
                 }
-            },
+            }
             Err(e) => eprintln!("Socket accept error: {}", e),
         }
     }
@@ -384,15 +391,12 @@ impl Application {
             use futures_util::StreamExt;
 
             let socket_future = async {
+                use futures_util::future::OptionFuture;
                 #[cfg(unix)]
-                {
-                    use futures_util::future::OptionFuture;
-                    OptionFuture::from(self.socket_rx.as_mut().map(|rx| rx.recv())).await
-                }
+                let opt: Option<_> = self.socket_rx.as_mut().map(|rx| rx.recv());
                 #[cfg(not(unix))]
-                {
-                    None::<Option<String>>
-                }
+                let opt: Option<futures_util::future::Ready<Option<String>>> = None;
+                OptionFuture::from(opt).await
             };
 
             tokio::select! {
@@ -421,11 +425,6 @@ impl Application {
                     self.editor.status_msg = Some((msg.message, severity));
                     helix_event::request_redraw();
                 }
-                msg = socket_future => {
-                    if let Some(Some(msg)) = msg {
-                        self.handle_socket_command(msg.parse::<MappableCommand>()).await
-                    }
-                }
                 Some(callback) = self.jobs.wait_futures.next() => {
                     self.jobs.handle_callback(&mut self.editor, &mut self.compositor, callback);
                     self.render().await;
@@ -438,6 +437,11 @@ impl Application {
                         if _idle_handled {
                             return true;
                         }
+                    }
+                }
+                msg = socket_future => {
+                    if let Some(Some(msg)) = msg {
+                        self.handle_socket_command(msg.parse::<MappableCommand>()).await
                     }
                 }
             }
@@ -850,7 +854,7 @@ impl Application {
 
         if let Ok(command) = command {
             // command.execute(&mut cx);
-            if let MappableCommand::Typable {name, ..} = &command {
+            if let MappableCommand::Typable { name, .. } = &command {
                 if [
                     "run-shell-command",
                     "write",
@@ -862,14 +866,17 @@ impl Application {
                     "write-all",
                     "write-all!",
                     "write-quit-all",
-                    "write-quit-all!"
-                    ].contains(&name.as_str()) {
-                        let severity = Severity::Error;
-                        let err_string = Cow::from(format!("Running command {name} is forbidden from socket"));
-                        self.editor.status_msg = Some((err_string, severity));
-                        helix_event::request_redraw();
-                        return;
-                    }
+                    "write-quit-all!",
+                ]
+                .contains(&name.as_str())
+                {
+                    let severity = Severity::Error;
+                    let err_string =
+                        Cow::from(format!("Running command {name} is forbidden from socket"));
+                    self.editor.status_msg = Some((err_string, severity));
+                    helix_event::request_redraw();
+                    return;
+                }
             }
             let mut cx = crate::commands::Context {
                 editor: &mut self.editor,
@@ -877,7 +884,7 @@ impl Application {
                 register: None,
                 callback: Vec::new(),
                 on_next_key_callback: None,
-                jobs: &mut self.jobs
+                jobs: &mut self.jobs,
             };
             command.execute(&mut cx);
             helix_event::request_redraw();

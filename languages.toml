@@ -47,7 +47,7 @@ elm-language-server = { command = "elm-language-server" }
 elp = { command = "elp", args = ["server"] }
 elvish = { command = "elvish", args = ["-lsp"] }
 erlang-ls = { command = "erlang_ls" }
-expert = { command = "expert" }
+expert = { command = "expert", args = ["--stdio"] }
 fennel-ls = { command = "fennel-ls" }
 fish-lsp = { command = "fish-lsp", args = ["start"] }
 forc = { command = "forc", args = ["lsp"] }
@@ -1390,7 +1390,7 @@ source = { git = "https://github.com/gbprod/tree-sitter-twig", rev = "085648e01d
 name = "latex"
 scope = "source.tex"
 injection-regex = "tex"
-file-types = ["tex", "sty", "cls", "Rd", "bbx", "cbx"]
+file-types = ["tex", "dtx", "ins", "sty", "cls", "Rd", "bbx", "cbx"]
 comment-token = "%"
 language-servers = [ "texlab" ]
 indent = { tab-width = 4, unit = "\t" }
@@ -3029,7 +3029,7 @@ language-servers = [ "slint-lsp" ]
 
 [[grammar]]
 name = "slint"
-source = { git = "https://github.com/slint-ui/tree-sitter-slint", rev = "f11da7e62051ba8b9d4faa299c26de8aeedfc1cd" }
+source = { git = "https://github.com/slint-ui/tree-sitter-slint", rev = "68b25244cec6eb9d7f8f790ef781c29c822d8f84" }
 
 [[language]]
 name = "task"

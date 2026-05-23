@@ -2469,6 +2469,7 @@ scope = "source.qmd"
 language-id = "qmd"
 injection-regex = "qmd"
 file-types = ["qmd"]
+roots = ["_quarto.yml"]
 indent = { tab-width = 2, unit = "  " }
 grammar = "markdown"
 block-comment-tokens = { start = "<!--", end = "-->" }
@@ -3368,6 +3369,7 @@ file-types = [
   { glob = "_environment.local" }, # https://quarto.org/docs/projects/environment.html#local-environment
   { glob = "_environment.required" }, # https://quarto.org/docs/projects/environment.html#required-variables
   { glob = ".bazeliskrc" }, # https://github.com/bazelbuild/bazelisk#bazeliskrc-configuration-file
+  { glob = ".gitlab-ci-local-env" }, # https://github.com/firecow/gitlab-ci-local#via-environment-variables
 ]
 injection-regex = "env"
 comment-token = "#"
@@ -3866,7 +3868,7 @@ scope = "source.fs"
 roots = ["*.slnx", "*.sln", "*.fsproj"]
 injection-regex = "fsharp"
 file-types = ["fs", "fsx", "fsi", "fsscript"]
-comment-token = "//"
+comment-tokens = ["//", "///"]
 block-comment-tokens = { start = "(*", end = "*)" }
 indent = { tab-width = 4, unit = "    " }
 auto-format = true

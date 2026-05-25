@@ -196,7 +196,7 @@ impl<T> Tree<T> {
         }
     }
 
-    fn iter(&self) -> TreeIter<T> {
+    fn iter(&self) -> TreeIter<'_, T> {
         TreeIter {
             tree: self,
             current_index_forward: 0,
@@ -292,7 +292,6 @@ pub struct TreeView<T: TreeViewItem> {
     /// For implementing horizontal scoll
     max_len: usize,
     count: usize,
-    // tree_symbol_style: String,
     #[allow(clippy::type_complexity)]
     pre_render: Option<Box<dyn Fn(&mut Self, Rect) + 'static>>,
 
@@ -320,7 +319,6 @@ impl<T: TreeViewItem> TreeView<T> {
             column: 0,
             max_len: 0,
             count: 0,
-            // tree_symbol_style: "ui.text".into(),
             pre_render: None,
             on_opened_fn: None,
             on_folded_fn: None,
@@ -346,11 +344,6 @@ impl<T: TreeViewItem> TreeView<T> {
         self.on_folded_fn = Some(Box::new(f));
         self
     }
-
-    // pub fn tree_symbol_style(mut self, style: String) -> Self {
-    //     self.tree_symbol_style = style;
-    //     self
-    // }
 
     /// Reveal item in the tree based on the given `segments`.
     ///
@@ -493,14 +486,11 @@ impl<T: TreeViewItem> TreeView<T> {
         let MouseEvent {
             kind,
             row,
-            // column,
-            // modifiers,
             ..
         } = *event;
 
         match kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                // log::debug!("mouse-{} {} {}", row, self.winline, self.selected);
                 let cow = row as isize - self.winline as isize;
                 let selected = if cow > 0 {
                     self.selected.saturating_add(cow as usize)
@@ -511,7 +501,6 @@ impl<T: TreeViewItem> TreeView<T> {
                 if self.selected == selected {
                     self.on_enter(cxt, params, self.selected)
                         .unwrap_or_default();
-                    // self.regenerate_index();
                 } else {
                     self.set_selected(selected);
                 }
@@ -822,9 +811,6 @@ impl<T: TreeViewItem> TreeView<T> {
         Ok(&self.current()?.item)
     }
 
-    // pub fn winline(&self) -> usize {
-    //     self.winline
-    // }
 }
 
 #[derive(Clone)]
@@ -971,7 +957,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             });
     }
 
-    fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine> {
+    fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine<'_>> {
         if let Some(pre_render) = self.pre_render.take() {
             pre_render(self, area);
         }
@@ -1065,8 +1051,6 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             )
             // Horizontal scroll
             .map(|line| {
-                // let skip = self.column;
-                // let indent_len = line.indent.width();
                 RenderedLine {
                     indent: if line.indent.0.is_empty() {
                         Spans::default()
@@ -1089,7 +1073,6 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         let key_event = match event {
             Event::Key(event) => event,
             Event::Resize(..) => return EventResult::Consumed(None),
-            // Event::Mouse(event) => return self.handle_mouse_event(event, cx),
             _ => return EventResult::Ignored(None),
         };
         (|| -> Result<EventResult> {

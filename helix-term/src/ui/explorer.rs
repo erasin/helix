@@ -10,6 +10,7 @@ use helix_view::{
     graphics::{CursorKind, Rect},
     info::Info,
     input::{Event, KeyEvent},
+    keyboard::KeyCode,
     theme::Style,
     Editor,
 };
@@ -22,7 +23,12 @@ use tui::{
     widgets::{Block, Borders, Widget},
 };
 
+mod constants;
+mod state;
 mod tree;
+
+use self::constants::*;
+use self::state::*;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 enum FileType {
@@ -47,7 +53,6 @@ impl FileInfo {
 
     fn get_text(&self) -> Cow<'static, str> {
         let text = match self.file_type {
-            // FileType::Root => self.path.display().to_string(),
             FileType::Root | FileType::File | FileType::Folder => self
                 .path
                 .file_name()
@@ -138,32 +143,6 @@ enum PromptAction {
     RenameFile,
 }
 
-#[derive(Clone, Debug, Default)]
-struct State {
-    focus: bool,
-    open: bool,
-    current_root: PathBuf,
-    area_width: u16,
-    area: Rect,
-}
-
-impl State {
-    fn new(focus: bool, current_root: PathBuf) -> Self {
-        Self {
-            focus,
-            current_root,
-            open: true,
-            area_width: 0,
-            area: Rect::default(),
-        }
-    }
-}
-
-struct ExplorerHistory {
-    tree: TreeView<FileInfo>,
-    current_root: PathBuf,
-}
-
 pub struct Explorer {
     tree: TreeView<FileInfo>,
     history: Vec<ExplorerHistory>,
@@ -201,7 +180,6 @@ impl Explorer {
             tree: tree_view,
             current_root,
         });
-        const MAX_HISTORY_SIZE: usize = 20;
         Vec::truncate(&mut self.history, MAX_HISTORY_SIZE)
     }
 
@@ -538,13 +516,13 @@ impl Explorer {
                     }
                 }
                 (PromptAction::RemoveFolder, key) => {
-                    if let key!('y') = key {
+                    if matches!(key.code, KeyCode::Char(c) if c == 'y' || c == 'Y') {
                         close_documents(current_item_path, cx)?;
                         self.remove_folder()?;
                     }
                 }
                 (PromptAction::RemoveFile, key) => {
-                    if let key!('y') = key {
+                    if matches!(key.code, KeyCode::Char(c) if c == 'y' || c == 'Y') {
                         close_documents(current_item_path, cx)?;
                         self.remove_file()?;
                     }
@@ -621,7 +599,6 @@ impl Explorer {
     }
 
     fn increase_size(&mut self) {
-        const EDITOR_MIN_WIDTH: u16 = 10;
         self.column_width = std::cmp::min(
             self.state.area_width.saturating_sub(EDITOR_MIN_WIDTH),
             self.column_width.saturating_add(1),
@@ -744,7 +721,7 @@ impl Component for Explorer {
     }
 
     fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
-        if area.width < 10 || area.height < 5 {
+        if area.width < MIN_RENDER_WIDTH || area.height < MIN_RENDER_HEIGHT {
             cx.editor.set_error("explorer render area is too small");
             return;
         }

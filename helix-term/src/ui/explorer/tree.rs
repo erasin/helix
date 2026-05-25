@@ -1,9 +1,15 @@
-use std::{cmp::Ordering, path::PathBuf};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use anyhow::Result;
+use helix_core::movement::Direction;
 use helix_view::{
+    graphics::Rect,
     icons::ICONS,
-    input::{MouseButton, MouseEvent, MouseEventKind},
+    input::{Event, KeyEvent, MouseButton, MouseEvent, MouseEventKind},
     theme::Style,
 };
 
@@ -11,11 +17,6 @@ use crate::{
     compositor::{Component, Context, EventResult},
     ctrl, key, shift,
     ui::{self, Prompt},
-};
-use helix_core::movement::Direction;
-use helix_view::{
-    graphics::Rect,
-    input::{Event, KeyEvent},
 };
 use tui::{
     buffer::Buffer as Surface,
@@ -145,31 +146,21 @@ impl<T: TreeViewItem> Tree<T> {
             return Ok(());
         }
         let latest_children = self.get_children()?;
-        let filtered = std::mem::take(&mut self.children)
+        let mut latest_map: HashMap<String, Tree<T>> = latest_children
             .into_iter()
-            // Remove children that does not exists in latest_children
-            .filter(|tree| {
-                latest_children
-                    .iter()
-                    .any(|child| tree.item.name().eq(&child.item.name()))
-            })
-            .map(|mut tree| {
+            .map(|child| (child.item.name(), child))
+            .collect();
+
+        let mut kept = Vec::new();
+        for mut tree in std::mem::take(&mut self.children) {
+            if latest_map.remove(&tree.item.name()).is_some() {
                 tree.refresh()?;
-                Ok(tree)
-            })
-            .collect::<Result<Vec<_>>>()?;
+                kept.push(tree);
+            }
+        }
 
-        // Add new children
-        let new_nodes = latest_children
-            .into_iter()
-            .filter(|child| {
-                !filtered
-                    .iter()
-                    .any(|child_| child.item.name().eq(&child_.item.name()))
-            })
-            .collect::<Vec<_>>();
-
-        self.children = filtered.into_iter().chain(new_nodes).collect();
+        let new_nodes = latest_map.into_values();
+        self.children = kept.into_iter().chain(new_nodes).collect();
 
         self.sort();
 
@@ -200,7 +191,7 @@ impl<T> Tree<T> {
         }
     }
 
-    fn iter(&self) -> TreeIter<T> {
+    fn iter(&self) -> TreeIter<'_, T> {
         TreeIter {
             tree: self,
             current_index_forward: 0,
@@ -211,23 +202,22 @@ impl<T> Tree<T> {
     /// Find an element in the tree with given `predicate`.
     /// `start_index` is inclusive if direction is `Forward`.
     /// `start_index` is exclusive if direction is `Backward`.
-    fn find<F>(&self, start_index: usize, direction: Direction, predicate: F) -> Option<usize>
+    fn find<F>(&self, start_index: usize, direction: Direction, mut predicate: F) -> Option<usize>
     where
-        F: Clone + FnMut(&Tree<T>) -> bool,
+        F: FnMut(&Tree<T>) -> bool,
     {
         match direction {
             Direction::Forward => match self
                 .iter()
                 .skip(start_index)
-                .position(predicate.clone())
+                .position(&mut predicate)
                 .map(|index| index + start_index)
             {
                 Some(index) => Some(index),
-                None => self.iter().position(predicate),
+                None => self.iter().position(&mut predicate),
             },
 
-            Direction::Backward => match self.iter().take(start_index).rposition(predicate.clone())
-            {
+            Direction::Backward => match self.iter().take(start_index).rposition(&mut predicate) {
                 Some(index) => Some(index),
                 None => self.iter().rposition(predicate),
             },
@@ -293,10 +283,11 @@ pub struct TreeView<T: TreeViewItem> {
     /// For implementing horizontal scoll
     column: usize,
 
+    tree_len: usize,
+
     /// For implementing horizontal scoll
     max_len: usize,
     count: usize,
-    // tree_symbol_style: String,
     #[allow(clippy::type_complexity)]
     pre_render: Option<Box<dyn Fn(&mut Self, Rect) + 'static>>,
 
@@ -314,8 +305,11 @@ impl<T: TreeViewItem> TreeView<T> {
     pub fn build_tree(root: T) -> Result<Self> {
         let children = root.get_children()?;
         let items = vec_to_tree(children);
+        let tree = Tree::new(root, items);
+        let tree_len = tree.len();
         Ok(Self {
-            tree: Tree::new(root, items),
+            tree_len,
+            tree,
             selected: 0,
             backward_jumps: vec![],
             forward_jumps: vec![],
@@ -324,7 +318,6 @@ impl<T: TreeViewItem> TreeView<T> {
             column: 0,
             max_len: 0,
             count: 0,
-            // tree_symbol_style: "ui.text".into(),
             pre_render: None,
             on_opened_fn: None,
             on_folded_fn: None,
@@ -350,11 +343,6 @@ impl<T: TreeViewItem> TreeView<T> {
         self.on_folded_fn = Some(Box::new(f));
         self
     }
-
-    // pub fn tree_symbol_style(mut self, style: String) -> Self {
-    //     self.tree_symbol_style = style;
-    //     self
-    // }
 
     /// Reveal item in the tree based on the given `segments`.
     ///
@@ -423,6 +411,7 @@ impl<T: TreeViewItem> TreeView<T> {
 
     fn regenerate_index(&mut self) {
         self.tree.regenerate_index();
+        self.tree_len = self.tree.len();
     }
 
     fn move_to_parent(&mut self) -> Result<()> {
@@ -494,17 +483,10 @@ impl<T: TreeViewItem> TreeView<T> {
         cxt: &mut Context,
         params: &mut T::Params,
     ) -> EventResult {
-        let MouseEvent {
-            kind,
-            row,
-            // column,
-            // modifiers,
-            ..
-        } = *event;
+        let MouseEvent { kind, row, .. } = *event;
 
         match kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                // log::debug!("mouse-{} {} {}", row, self.winline, self.selected);
                 let cow = row as isize - self.winline as isize;
                 let selected = if cow > 0 {
                     self.selected.saturating_add(cow as usize)
@@ -515,7 +497,6 @@ impl<T: TreeViewItem> TreeView<T> {
                 if self.selected == selected {
                     self.on_enter(cxt, params, self.selected)
                         .unwrap_or_default();
-                    // self.regenerate_index();
                 } else {
                     self.set_selected(selected);
                 }
@@ -667,7 +648,7 @@ impl<T: TreeViewItem> TreeView<T> {
     }
 
     fn set_selected_without_history(&mut self, selected: usize) {
-        let selected = selected.clamp(0, self.tree.len().saturating_sub(1));
+        let selected = selected.clamp(0, self.tree_len.saturating_sub(1));
         if selected > self.selected {
             // Move down
             self.winline = selected.min(
@@ -825,10 +806,6 @@ impl<T: TreeViewItem> TreeView<T> {
     pub fn current_item(&self) -> Result<&T> {
         Ok(&self.current()?.item)
     }
-
-    // pub fn winline(&self) -> usize {
-    //     self.winline
-    // }
 }
 
 #[derive(Clone)]
@@ -843,28 +820,39 @@ struct RenderTreeParams<'a, T> {
     prefix: Spans<'a>,
     level: usize,
     selected: usize,
+    selected_style: Style,
+    text_style: Style,
+    directory_style: Style,
+    indent_guide_style: Style,
+    indent_guide_char: char,
 }
 
 fn render_tree<'a, T: TreeViewItem>(
-    RenderTreeParams {
+    params: RenderTreeParams<'a, T>,
+    ancestor_indices: &HashSet<usize>,
+) -> Vec<RenderedLine<'a>> {
+    let RenderTreeParams {
         tree,
         prefix,
         level,
         selected,
-    }: RenderTreeParams<'a, T>,
-    cx: &mut Context,
-) -> Vec<RenderedLine<'a>> {
+        selected_style,
+        text_style,
+        directory_style,
+        indent_guide_style,
+        indent_guide_char,
+    } = params;
     let is_selected = selected == tree.index;
-    let is_ancestor_of_current_item = !is_selected && tree.get(selected).is_some();
+    let is_ancestor_of_current_item = ancestor_indices.contains(&tree.index);
 
     let style = if is_selected {
-        cx.editor.theme.get("ui.menu.selected")
+        selected_style
     } else {
-        cx.editor.theme.get("ui.text")
+        text_style
     };
 
     let ancestor_style = if is_ancestor_of_current_item {
-        cx.editor.theme.get("ui.text.directory")
+        directory_style
     } else {
         style
     };
@@ -893,12 +881,10 @@ fn render_tree<'a, T: TreeViewItem>(
             }
         };
 
-        let editor_config = cx.editor.config.load();
-
         indent.0.push(indicator);
         prefix.0.push(Span::styled(
-            editor_config.indent_guides.character.to_string(),
-            cx.editor.theme.get("ui.virtual.indent-guide"),
+            indent_guide_char.to_string(),
+            indent_guide_style,
         ));
         prefix.0.push(Span::raw(" "));
     }
@@ -920,8 +906,13 @@ fn render_tree<'a, T: TreeViewItem>(
                     prefix: prefix.clone(),
                     level: level + 1,
                     selected,
+                    selected_style,
+                    text_style,
+                    directory_style,
+                    indent_guide_style,
+                    indent_guide_char,
                 },
-                cx,
+                ancestor_indices,
             )
         }))
         .collect()
@@ -965,7 +956,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             });
     }
 
-    fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine> {
+    fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine<'_>> {
         if let Some(pre_render) = self.pre_render.take() {
             pre_render(self, area);
         }
@@ -973,14 +964,36 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         self.winline = self.winline.min(area.height.saturating_sub(1) as usize);
         let skip = self.selected.saturating_sub(self.winline);
 
+        let selected_style = cx.editor.theme.get("ui.menu.selected");
+        let text_style = cx.editor.theme.get("ui.text");
+        let directory_style = cx.editor.theme.get("ui.text.directory");
+        let indent_guide_style = cx.editor.theme.get("ui.virtual.indent-guide");
+        let indent_guide_char = cx.editor.config.load().indent_guides.character;
+
         let params = RenderTreeParams {
             tree: &self.tree,
             prefix: Span::raw(" ").into(),
             level: 0,
             selected: self.selected,
+            selected_style,
+            text_style,
+            directory_style,
+            indent_guide_style,
+            indent_guide_char,
         };
 
-        let lines = render_tree(params, cx);
+        let mut ancestor_indices = HashSet::new();
+        let mut current_idx = self.selected;
+        while let Some(current) = self.tree.get(current_idx) {
+            if let Some(parent_idx) = current.parent_index {
+                ancestor_indices.insert(parent_idx);
+                current_idx = parent_idx;
+            } else {
+                break;
+            }
+        }
+
+        let lines = render_tree(params, &ancestor_indices);
 
         self.max_len = lines
             .iter()
@@ -995,41 +1008,43 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             remaining_lines: Vec<RenderedLine<'a>>,
         }
         fn retain_ancestors(lines: Vec<RenderedLine>, skip: usize) -> RetainAncestorResult {
-            if skip == 0 {
-                return RetainAncestorResult {
-                    skipped_ancestors: vec![],
-                    remaining_lines: lines,
-                };
-            }
-            if let Some(line) = lines.first() {
-                if line.selected {
-                    return RetainAncestorResult {
-                        skipped_ancestors: vec![],
-                        remaining_lines: lines,
-                    };
+            let mut remaining = lines;
+            let mut all_skipped_ancestors = Vec::new();
+            let mut skip = skip;
+
+            loop {
+                if skip == 0 || remaining.is_empty() {
+                    break;
                 }
+                if remaining.first().is_some_and(|line| line.selected) {
+                    break;
+                }
+
+                let selected_index = remaining.iter().position(|line| line.selected);
+                skip = match selected_index {
+                    None => skip,
+                    Some(selected_index) => skip.min(selected_index),
+                };
+
+                let split_point = skip.min(remaining.len().saturating_sub(1));
+                let skipped: Vec<_> = remaining.drain(..split_point).collect();
+
+                let ancestor_count = skipped
+                    .iter()
+                    .filter(|line| line.is_ancestor_of_current_item)
+                    .count();
+                all_skipped_ancestors.extend(
+                    skipped
+                        .into_iter()
+                        .filter(|line| line.is_ancestor_of_current_item),
+                );
+
+                skip = ancestor_count;
             }
 
-            let selected_index = lines.iter().position(|line| line.selected);
-            let skip = match selected_index {
-                None => skip,
-                Some(selected_index) => skip.min(selected_index),
-            };
-            let (skipped, remaining) = lines.split_at(skip.min(lines.len().saturating_sub(1)));
-
-            let skipped_ancestors = skipped
-                .iter()
-                .filter(|line| line.is_ancestor_of_current_item)
-                .cloned()
-                .collect::<Vec<_>>();
-
-            let result = retain_ancestors(remaining.to_vec(), skipped_ancestors.len());
             RetainAncestorResult {
-                skipped_ancestors: skipped_ancestors
-                    .into_iter()
-                    .chain(result.skipped_ancestors)
-                    .collect(),
-                remaining_lines: result.remaining_lines,
+                skipped_ancestors: all_skipped_ancestors,
+                remaining_lines: remaining,
             }
         }
 
@@ -1058,18 +1073,14 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
                     .take(take.saturating_sub(skipped_ancestors_len)),
             )
             // Horizontal scroll
-            .map(|line| {
-                // let skip = self.column;
-                // let indent_len = line.indent.width();
-                RenderedLine {
-                    indent: if line.indent.0.is_empty() {
-                        Spans::default()
-                    } else {
-                        line.indent
-                    },
-                    content: line.content,
-                    ..line
-                }
+            .map(|line| RenderedLine {
+                indent: if line.indent.0.is_empty() {
+                    Spans::default()
+                } else {
+                    line.indent
+                },
+                content: line.content,
+                ..line
             })
             .collect()
     }
@@ -1083,7 +1094,6 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         let key_event = match event {
             Event::Key(event) => event,
             Event::Resize(..) => return EventResult::Consumed(None),
-            // Event::Mouse(event) => return self.handle_mouse_event(event, cx),
             _ => return EventResult::Ignored(None),
         };
         (|| -> Result<EventResult> {

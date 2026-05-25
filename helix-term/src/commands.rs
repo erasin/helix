@@ -617,10 +617,10 @@ impl MappableCommand {
         goto_next_tabstop, "Goto next snippet placeholder",
         goto_prev_tabstop, "Goto next snippet placeholder",
         blame_line, "Show blame for the current line",
-        rotate_selections_first, "Make the first selection your primary one",
-        rotate_selections_last, "Make the last selection your primary one",
         open_or_focus_explorer, "Open or focus explorer",
         reveal_current_file, "Reveal current file in explorer",
+        rotate_selections_first, "Make the first selection your primary one",
+        rotate_selections_last, "Make the last selection your primary one",
     );
 }
 

@@ -229,10 +229,13 @@ impl EditorView {
         if viewport.right() != view.area.right() {
             let x = area.right();
             let border_style = theme.get("ui.window");
+            let surface_area = surface.area;
             for y in area.top()..area.bottom() {
+                if x >= surface_area.right() || y >= surface_area.bottom() {
+                    break;
+                }
                 surface[(x, y)]
                     .set_symbol(tui::symbols::line::VERTICAL)
-                    //.set_symbol(" ")
                     .set_style(border_style);
             }
         }

@@ -34,6 +34,7 @@ use self::state::*;
 enum FileType {
     File,
     Folder,
+    Overflow,
     Root,
 }
 
@@ -57,6 +58,7 @@ impl FileInfo {
                 .path
                 .file_name()
                 .map_or("/".into(), |p| p.to_string_lossy().into_owned()),
+            FileType::Overflow => "  ...".into(),
         };
 
         #[cfg(test)]
@@ -78,6 +80,8 @@ impl Ord for FileInfo {
         match (self.file_type, other.file_type) {
             (Root, _) => return Ordering::Less,
             (_, Root) => return Ordering::Greater,
+            (Overflow, _) => return Ordering::Greater,
+            (_, Overflow) => return Ordering::Less,
             _ => {}
         };
 
@@ -102,10 +106,16 @@ impl TreeViewItem for FileInfo {
             FileType::Root | FileType::Folder => {}
             _ => return Ok(vec![]),
         };
-        let ret: Vec<_> = std::fs::read_dir(&self.path)?
+        let mut iter = std::fs::read_dir(&self.path)?
             .filter_map(|entry| entry.ok())
-            .filter_map(|entry| dir_entry_to_file_info(entry, &self.path))
-            .collect();
+            .filter_map(|entry| dir_entry_to_file_info(entry, &self.path));
+        let mut ret: Vec<_> = iter.by_ref().take(INITIAL_CHILD_LOAD_COUNT).collect();
+        if iter.next().is_some() {
+            ret.push(FileInfo {
+                file_type: FileType::Overflow,
+                path: self.path.clone(),
+            });
+        }
         Ok(ret)
     }
 
@@ -292,7 +302,7 @@ impl Explorer {
         match item.file_type {
             FileType::Folder => self.new_remove_folder_prompt(),
             FileType::File => self.new_remove_file_prompt(),
-            FileType::Root => bail!("Root is not removable"),
+            FileType::Root | FileType::Overflow => bail!("Root is not removable"),
         }
     }
 
@@ -352,6 +362,9 @@ impl Explorer {
 
     fn toggle_current(item: &mut FileInfo, cx: &mut Context, state: &mut State) -> TreeOp {
         (|| -> Result<TreeOp> {
+            if item.file_type == FileType::Overflow {
+                return Ok(TreeOp::Noop);
+            }
             if item.path == Path::new("") {
                 return Ok(TreeOp::Noop);
             }

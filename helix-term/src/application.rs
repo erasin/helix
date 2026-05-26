@@ -89,6 +89,8 @@ pub struct Application {
     theme_mode: Option<theme::Mode>,
     #[cfg(unix)]
     socket_rx: Option<mpsc::Receiver<String>>,
+    #[cfg(unix)]
+    socket_path: Option<std::path::PathBuf>,
 }
 
 #[cfg(feature = "integration")]
@@ -301,26 +303,29 @@ impl Application {
         .context("build signal handler")?;
 
         #[cfg(unix)]
-        let socket_rx = if matches!(
+        let (socket_rx, socket_path) = if matches!(
             helix_loader::workspace_trust::quick_query_workspace(config.load().editor.insecure),
             helix_loader::workspace_trust::TrustStatus::Trusted
         ) {
-            let (socket_tx, socket_rx) = mpsc::channel::<String>(10);
+            let (socket_tx, rx) = mpsc::channel::<String>(10);
             let path = helix_loader::workspace_socket_file();
             if let Some(parent) = path.parent() {
                 if !parent.exists() {
                     std::fs::create_dir_all(parent).ok();
                 }
             }
+            let socket_path = Some(path.clone());
             tokio::spawn(start_unix_socket_listener(socket_tx, path));
-            Some(socket_rx)
+            (Some(rx), socket_path)
         } else {
-            None
+            (None, None)
         };
 
         let app = Self {
             #[cfg(unix)]
             socket_rx,
+            #[cfg(unix)]
+            socket_path,
             compositor,
             terminal,
             editor,
@@ -1496,6 +1501,15 @@ impl Application {
         }
 
         errs
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Application {
+    fn drop(&mut self) {
+        if let Some(ref path) = self.socket_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 

@@ -127,8 +127,8 @@ pub fn hook_insert(
             // && char_at pos == close
             return handle_insert_close(doc, range, pair);
         }
-    // } else if ch.is_whitespace() {
-    //     return handle_insert_whitespace(doc, range, ch, pairs);
+        // } else if ch.is_whitespace() {
+        //     return handle_insert_whitespace(doc, range, ch, pairs);
     }
 
     None
@@ -202,6 +202,7 @@ pub fn handle_delete(doc: &Rope, range: &Range) -> Option<(Deletion, Range)> {
     Some((delete, next_range))
 }
 
+#[allow(dead_code)]
 fn handle_insert_whitespace(
     doc: &Rope,
     range: &Range,

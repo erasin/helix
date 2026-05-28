@@ -153,15 +153,27 @@ fn handle_document_change(
     doc_id: DocumentId,
     prompt_if_modified: bool,
 ) {
+    // Find a view that actually shows this document,
+    // instead of relying on get_synced_view_id which may
+    // return a view whose area isn't properly initialized
+    // for this document.
+    let view_id = editor
+        .tree
+        .views()
+        .find(|(v, _)| v.doc == doc_id)
+        .map(|(v, _)| v.id);
+    let target_view_id = match view_id {
+        Some(view_id) => view_id,
+        None => {
+            let current_view_id = view_mut!(editor).id;
+            let doc = doc_mut!(editor, &doc_id);
+            doc.ensure_view_init(current_view_id);
+            current_view_id
+        }
+    };
+
     let scrolloff = editor.config().scrolloff;
-    let target_view_id = editor.get_synced_view_id(doc_id);
-
     let doc = doc_mut!(editor, &doc_id);
-
-    if !doc.selections().contains_key(&target_view_id) {
-        let current_view_id = view_mut!(editor).id;
-        doc.ensure_view_init(current_view_id);
-    }
 
     let Some(path) = doc.path().cloned() else {
         return;
@@ -239,15 +251,24 @@ fn prompt_reload_modified(compositor: &mut Compositor, doc_id: DocumentId, path_
         move |cx, _input, event| {
             match event {
                 PromptEvent::Validate => {
+                    let view_id = cx
+                        .editor
+                        .tree
+                        .views()
+                        .find(|(v, _)| v.doc == doc_id)
+                        .map(|(v, _)| v.id);
+                    let target_view_id = match view_id {
+                    Some(view_id) => view_id,
+                    None => {
+                            let current_view_id = view_mut!(cx.editor).id;
+                            let doc = doc_mut!(cx.editor, &doc_id);
+                            doc.ensure_view_init(current_view_id);
+                            current_view_id
+                        }
+                    };
+
                     let scrolloff = cx.editor.config().scrolloff;
-                    let target_view_id = cx.editor.get_synced_view_id(doc_id);
                     let doc = doc_mut!(cx.editor, &doc_id);
-
-                    if !doc.selections().contains_key(&target_view_id) {
-                        let current_view_id = view_mut!(cx.editor).id;
-                        doc.ensure_view_init(current_view_id);
-                    }
-
                     let view = view_mut!(cx.editor, target_view_id);
                     match doc.reload(view, &cx.editor.diff_providers) {
                         Ok(_) => {

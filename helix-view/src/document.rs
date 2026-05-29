@@ -1496,9 +1496,18 @@ impl Document {
         self.modified_since_accessed = true;
         self.version += 1;
 
+        // Clamp selection positions to the old document bounds before
+        // mapping through changes, since update_positions will panic if
+        // any position exceeds the changeset's len. This can happen when
+        // external file changes (e.g. git branch switch) leave selections
+        // at positions beyond the current document length. (#14544)
+        let old_len = old_doc.len_chars();
         for selection in self.selections.values_mut() {
             *selection = selection
                 .clone()
+                .transform(|range| {
+                    Range::new(range.anchor.min(old_len), range.head.min(old_len))
+                })
                 // Map through changes
                 .map(transaction.changes())
                 // Ensure all selections across all views still adhere to invariants.

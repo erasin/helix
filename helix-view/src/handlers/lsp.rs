@@ -323,7 +323,11 @@ impl Editor {
             if !lang_conf.persistent_diagnostic_sources.is_empty() {
                 // Sort diagnostics first by severity and then by line numbers.
                 // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-                diagnostics.sort_by_key(|d| (d.severity, d.range.start));
+                if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    diagnostics.sort_by_key(|d| (d.severity, d.range.start));
+                })) {
+                    log::warn!("Sort diagnostics panicked (likely Ord violation): {e:?}");
+                }
             }
             for source in &lang_conf.persistent_diagnostic_sources {
                 let new_diagnostics = diagnostics
@@ -360,7 +364,13 @@ impl Editor {
 
         // Sort diagnostics first by severity and then by line numbers.
         // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-        diagnostics.sort_by_key(|(d, provider)| (d.severity, d.range.start, provider.clone()));
+        if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            diagnostics.sort_by_key(|(d, provider)| {
+                (d.severity, d.range.start, provider.clone())
+            });
+        })) {
+            log::warn!("Sort diagnostics panicked (likely Ord violation): {e:?}");
+        }
 
         if let Some(doc) = doc {
             let diagnostic_of_language_server_and_not_in_unchanged_sources =

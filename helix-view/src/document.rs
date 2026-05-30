@@ -1587,13 +1587,17 @@ impl Document {
             true
         });
 
-        self.diagnostics.sort_by_key(|diagnostic| {
-            (
-                diagnostic.range,
-                diagnostic.severity,
-                diagnostic.provider.clone(),
-            )
-        });
+        if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.diagnostics.sort_by_key(|diagnostic| {
+                (
+                    diagnostic.range,
+                    diagnostic.severity,
+                    diagnostic.provider.clone(),
+                )
+            });
+        })) {
+            log::warn!("Sort diagnostics panicked (likely Ord violation): {e:?}");
+        }
 
         // Update the inlay hint annotations' positions, helping ensure they are displayed in the proper place
         let apply_inlay_hint_changes = |annotations: &mut Vec<InlineAnnotation>| {

@@ -321,13 +321,11 @@ impl Editor {
             .and_then(|doc| Some((doc.language_config()?, self.diagnostics.get(&uri)?)))
         {
             if !lang_conf.persistent_diagnostic_sources.is_empty() {
-                // Sort diagnostics first by severity and then by line numbers.
-                // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-                if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    diagnostics.sort_by_key(|d| (d.severity, d.range.start));
-                })) {
-                    log::warn!("Sort diagnostics panicked (likely Ord violation): {e:?}");
-                }
+                // Sort diagnostics by position.
+                // Using only u32 fields (line, character) ensures the comparison
+                // is a total order and avoids Ord violation panics from the
+                // standard library's sort implementation. (#14544)
+                diagnostics.sort_by_key(|d| d.range.start);
             }
             for source in &lang_conf.persistent_diagnostic_sources {
                 let new_diagnostics = diagnostics
@@ -362,15 +360,10 @@ impl Editor {
             Entry::Vacant(v) => v.insert(diagnostics.collect()),
         };
 
-        // Sort diagnostics first by severity and then by line numbers.
-        // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-        if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            diagnostics.sort_by_key(|(d, provider)| {
-                (d.severity, d.range.start, provider.clone())
-            });
-        })) {
-            log::warn!("Sort diagnostics panicked (likely Ord violation): {e:?}");
-        }
+        // Sort diagnostics by position.
+        // Using only u32 fields (line, character) ensures the comparison
+        // is a total order and avoids Ord violation panics. (#14544)
+        diagnostics.sort_by_key(|(d, _)| d.range.start);
 
         if let Some(doc) = doc {
             let diagnostic_of_language_server_and_not_in_unchanged_sources =

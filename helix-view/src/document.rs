@@ -1589,14 +1589,10 @@ impl Document {
 
         if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.diagnostics.sort_by_key(|diagnostic| {
-                (
-                    diagnostic.range,
-                    diagnostic.severity,
-                    diagnostic.provider.clone(),
-                )
+                (diagnostic.range.start, diagnostic.range.end)
             });
         })) {
-            log::warn!("Sort diagnostics panicked (likely Ord violation): {e:?}");
+            log::warn!("Sort diagnostics panicked: {e:?}");
         }
 
         // Update the inlay hint annotations' positions, helping ensure they are displayed in the proper place
@@ -2328,13 +2324,7 @@ impl Document {
             });
         }
         self.diagnostics.extend(diagnostics);
-        self.diagnostics.sort_by_key(|diagnostic| {
-            (
-                diagnostic.range,
-                diagnostic.severity,
-                diagnostic.provider.clone(),
-            )
-        });
+        self.diagnostics.sort_by_key(|d| (d.range.start, d.range.end));
     }
 
     /// clears diagnostics for a given language server id if set, otherwise all diagnostics are cleared

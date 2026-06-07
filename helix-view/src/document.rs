@@ -1515,9 +1515,10 @@ impl Document {
         }
 
         for view_data in self.view_data.values_mut() {
-            view_data.view_position.anchor = transaction
-                .changes()
-                .map_pos(view_data.view_position.anchor, Assoc::Before);
+            // Clamp anchor to old document bounds to prevent map_pos panic
+            // when positions are stale from a longer version of the document.
+            let anchor = view_data.view_position.anchor.min(old_len);
+            view_data.view_position.anchor = transaction.changes().map_pos(anchor, Assoc::Before);
         }
 
         // generate revert to savepoint
@@ -1553,6 +1554,18 @@ impl Document {
         // start computing the diff in parallel
         if let Some(diff_handle) = &self.diff_handle {
             diff_handle.update_document(self.text.clone(), false);
+        }
+
+        // Clamp diagnostic positions to old document bounds to prevent
+        // update_positions panic when positions are stale from a longer
+        // version of the document. (#14544)
+        for diagnostic in self.diagnostics.iter_mut() {
+            if diagnostic.range.start > old_len {
+                diagnostic.range.start = old_len;
+            }
+            if diagnostic.range.end > old_len {
+                diagnostic.range.end = old_len;
+            }
         }
 
         // map diagnostics over changes too
@@ -1597,6 +1610,13 @@ impl Document {
 
         // Update the inlay hint annotations' positions, helping ensure they are displayed in the proper place
         let apply_inlay_hint_changes = |annotations: &mut Vec<InlineAnnotation>| {
+            // Clamp char_idx to old document bounds to prevent update_positions
+            // panic when positions are stale from a longer version of the document.
+            for annotation in annotations.iter_mut() {
+                if annotation.char_idx > old_len {
+                    annotation.char_idx = old_len;
+                }
+            }
             changes.update_positions(
                 annotations
                     .iter_mut()
@@ -1626,6 +1646,14 @@ impl Document {
             let text_len = self.text.len_chars();
             let mut updated = Vec::with_capacity(highlights.ranges.len());
             for mut range in highlights.ranges.drain(..) {
+                // Clamp positions to old document bounds to prevent
+                // update_positions panic. (#14544)
+                if range.start > old_len {
+                    range.start = old_len;
+                }
+                if range.end > old_len {
+                    range.end = old_len;
+                }
                 changes.update_positions(
                     [
                         (&mut range.start, Assoc::After),

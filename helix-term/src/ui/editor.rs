@@ -36,6 +36,7 @@ use helix_view::{
 };
 use std::{mem::take, num::NonZeroUsize, ops, path::PathBuf, rc::Rc};
 
+use log::warn;
 use tui::{buffer::Buffer as Surface, text::Span};
 
 use super::text_decorations::blame::InlineBlame;
@@ -229,10 +230,29 @@ impl EditorView {
         if viewport.right() != view.area.right() {
             let x = area.right();
             let border_style = theme.get("ui.window");
-            for y in area.top()..area.bottom() {
-                surface[(x, y)]
-                    .set_symbol(tui::symbols::line::VERTICAL)
-                    .set_style(border_style);
+            // Defensive: view.area can transiently exceed surface.area during/after
+            // :reload or layout changes (see commit 844db76d7). Without this guard,
+            // `surface[(x, y)]` panics with "index out of bounds" when the surface
+            // is smaller than the requested cell (e.g. len=19, index=65535).
+            let surface_area = surface.area;
+            let x_in_bounds = x < surface_area.right();
+            let y_top = area.top().max(surface_area.top());
+            let y_bot = area.bottom().min(surface_area.bottom());
+            if !x_in_bounds || y_top >= y_bot {
+                warn!(
+                    "skipping right border draw: view.area={:?} extends past surface.area={:?} \
+                     (viewport={:?}, doc={})",
+                    area,
+                    surface_area,
+                    viewport,
+                    doc.display_name(),
+                );
+            } else {
+                for y in y_top..y_bot {
+                    surface[(x, y)]
+                        .set_symbol(tui::symbols::line::VERTICAL)
+                        .set_style(border_style);
+                }
             }
         }
 

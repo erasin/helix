@@ -185,6 +185,38 @@ impl Buffer {
         &self.area
     }
 
+    /// Clamp `area` to the intersection with this buffer's area.
+    ///
+    /// Methods like [`set_style`](Self::set_style), [`set_background`](Self::set_background),
+    /// [`clear`](Self::clear) and [`clear_with`](Self::clear_with) iterate over every cell in
+    /// the given `area` and index into the underlying `content` vec. If the caller passes an
+    /// area that extends past `self.area` (which can happen transiently during `:reload` or
+    /// layout changes — see `helix-term/src/ui/editor.rs` right-border guard), indexing would
+    /// panic with "index out of bounds".
+    ///
+    /// This helper intersects the input area with `self.area` and logs a warning when the
+    /// input had to be shrunk, so the offending caller can be identified from logs without
+    /// crashing the editor.
+    fn clamp_area(&self, area: Rect) -> Rect {
+        if area.intersects(self.area)
+            && area.x >= self.area.x
+            && area.y >= self.area.y
+            && area.right() <= self.area.right()
+            && area.bottom() <= self.area.bottom()
+        {
+            return area;
+        }
+        let clamped = area.intersection(self.area);
+        log::warn!(
+            "buffer area overflow: caller passed area={:?}, clamped to buffer.area={:?}; \
+             this indicates a stale/oversized Rect from the caller (likely a transient \
+             layout/render inconsistency after :reload)",
+            area,
+            self.area,
+        );
+        clamped
+    }
+
     /// Returns a reference to Cell at the given coordinates
     pub fn get(&self, x: u16, y: u16) -> Option<&Cell> {
         self.index_of_opt(x, y).map(|i| &self.content[i])
@@ -580,6 +612,7 @@ impl Buffer {
         note = "You should use styling capabilities of `Buffer::set_style`"
     )]
     pub fn set_background(&mut self, area: Rect, color: Color) {
+        let area = self.clamp_area(area);
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 self[(x, y)].set_bg(color);
@@ -589,6 +622,7 @@ impl Buffer {
 
     /// Set all cells in the [area](Rect) to the given [Style]
     pub fn set_style(&mut self, area: Rect, style: Style) {
+        let area = self.clamp_area(area);
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 self[(x, y)].set_style(style);
@@ -617,6 +651,7 @@ impl Buffer {
 
     /// Clear an area in the buffer
     pub fn clear(&mut self, area: Rect) {
+        let area = self.clamp_area(area);
         for x in area.left()..area.right() {
             for y in area.top()..area.bottom() {
                 self[(x, y)].reset();
@@ -626,6 +661,7 @@ impl Buffer {
 
     /// Clear an area in the buffer with a default style.
     pub fn clear_with(&mut self, area: Rect, style: Style) {
+        let area = self.clamp_area(area);
         for x in area.left()..area.right() {
             for y in area.top()..area.bottom() {
                 let cell = &mut self[(x, y)];
@@ -1019,5 +1055,43 @@ mod tests {
             height: 4,
         };
         assert_eq!(one, merged);
+    }
+
+    // Regression tests for clamp_area: callers may pass a stale/oversized Rect
+    // (see the right-border panic chain fixed in helix-term/src/ui/editor.rs).
+    // Buffer::set_style / set_background / clear / clear_with must clamp such
+    // areas to self.area instead of panicking with "index out of bounds".
+    #[test]
+    fn set_style_clamps_oversized_area() {
+        let area = Rect::new(0, 0, 19, 1);
+        let mut buffer = Buffer::empty(area);
+        // area extends one column past the right edge of the buffer
+        let oversized = Rect::new(0, 0, 20, 1);
+        // Must not panic.
+        buffer.set_style(oversized, Style::default());
+        // All 19 cells are within the buffer and should still be addressable.
+        assert_eq!(buffer.content.len(), 19);
+    }
+
+    #[test]
+    fn clear_clamps_oversized_area() {
+        let area = Rect::new(0, 0, 19, 1);
+        let mut buffer = Buffer::empty(area);
+        // area extends one row past the bottom of the buffer
+        let oversized = Rect::new(0, 0, 19, 2);
+        // Must not panic.
+        buffer.clear(oversized);
+        assert_eq!(buffer.content.len(), 19);
+    }
+
+    #[test]
+    fn set_style_disjoint_area_is_noop() {
+        let area = Rect::new(0, 0, 19, 1);
+        let mut buffer = Buffer::empty(area);
+        // completely outside the buffer — clamp produces zero-area rect,
+        // so the loop body must not execute.
+        let disjoint = Rect::new(50, 50, 5, 5);
+        buffer.set_style(disjoint, Style::default());
+        assert_eq!(buffer.content.len(), 19);
     }
 }

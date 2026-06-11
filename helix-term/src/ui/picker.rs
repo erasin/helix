@@ -916,7 +916,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                                 surface.set_stringn(
                                     inner.x,
                                     inner.y + i as u16,
-                                    dir,
+                                    &dir,
                                     inner.width as usize,
                                     cx.editor.theme.get("ui.text.directory"),
                                 );
@@ -934,7 +934,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                                 surface.set_stringn(
                                     inner.x + icon.width() as u16,
                                     inner.y + i as u16,
-                                    name,
+                                    &name,
                                     inner.width as usize,
                                     cx.editor.theme.get("ui.text"),
                                 );
@@ -942,7 +942,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
                                 surface.set_stringn(
                                     inner.x,
                                     inner.y + i as u16,
-                                    name,
+                                    &name,
                                     inner.width as usize,
                                     cx.editor.theme.get("ui.text"),
                                 );

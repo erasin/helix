@@ -2601,7 +2601,7 @@ fn global_search(cx: &mut Context) {
 
     let columns = [
         PickerColumn::new("path", |item: &FileResult, config: &GlobalSearchConfig| {
-            let path = helix_stdx::path::get_relative_path(&item.path);
+            let path = helix_stdx::path::get_relative_path(item.path.as_ref());
 
             let directories = path
                 .parent()
@@ -2624,10 +2624,10 @@ fn global_search(cx: &mut Context) {
             }
 
             spans.extend_from_slice(&[
-                Span::styled(directories, config.directory_style),
+                Span::styled(directories, config.style.directory_style),
                 Span::raw(filename),
-                Span::styled(":", config.colon_style),
-                Span::styled((item.line_start + 1).to_string(), config.number_style),
+                Span::styled(":", config.style.colon_style),
+                Span::styled((item.line_start + 1).to_string(), config.style.number_style),
             ]);
 
             Cell::from(Spans::from(spans))

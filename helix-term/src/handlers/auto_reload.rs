@@ -175,7 +175,7 @@ fn handle_document_change(
     let scrolloff = editor.config().scrolloff;
     let doc = doc_mut!(editor, &doc_id);
 
-    let Some(path) = doc.path().cloned() else {
+    let Some(path) = doc.path().map(|p| p.to_path_buf()) else {
         return;
     };
 

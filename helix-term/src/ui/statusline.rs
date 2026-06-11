@@ -521,7 +521,7 @@ where
 
     if let Some(icon) = icons
         .fs()
-        .from_optional_path_or_lang(context.doc.path().map(|path| path.as_path()), lang)
+        .from_optional_path_or_lang(context.doc.path(), lang)
     {
         write(context, icon.to_span_with(|icon| format!(" {icon} ")));
     } else {

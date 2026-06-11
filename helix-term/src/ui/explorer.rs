@@ -238,7 +238,7 @@ impl Explorer {
 
     pub fn reveal_current_file(&mut self, cx: &mut Context) -> Result<()> {
         self.focus();
-        let current_document_path = doc!(cx.editor).path().cloned();
+        let current_document_path = doc!(cx.editor).path().map(|p| p.to_path_buf());
         match current_document_path {
             None => Ok(()),
             Some(current_path) => self.reveal_file(current_path),

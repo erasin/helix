@@ -724,7 +724,7 @@ where
 }
 
 use helix_lsp::{lsp, Client, LanguageServerId, LanguageServerName};
-use url::Url;
+use helix_stdx::Url;
 
 impl Document {
     pub fn from(
@@ -1458,6 +1458,7 @@ impl Document {
     /// Remove a view's selection and inlay hints from this document.
     pub fn remove_view(&mut self, view_id: ViewId) {
         self.selections.remove(&view_id);
+        self.view_data.remove(&view_id);
         self.inlay_hints.remove(&view_id);
         self.jump_labels.remove(&view_id);
         self.document_highlights.remove(&view_id);
@@ -2011,6 +2012,23 @@ impl Document {
         self.language.as_deref()
     }
 
+    /// The language configuration of the injection layer at `byte_pos`,
+    /// so language-specific behavior follows embedded languages. Falls back to the
+    /// document's root language config when there is no syntax tree.
+    pub fn language_config_at<'a>(
+        &'a self,
+        loader: &'a syntax::Loader,
+        byte_pos: usize,
+    ) -> Option<&'a LanguageConfiguration> {
+        match self.syntax() {
+            Some(syntax) => {
+                let layer = syntax.layer_for_byte_range(byte_pos as u32, byte_pos as u32);
+                Some(&**loader.language(syntax.layer(layer).language).config())
+            }
+            None => self.language_config(),
+        }
+    }
+
     /// Current document version, incremented at each change.
     pub fn version(&self) -> i32 {
         self.version
@@ -2140,8 +2158,8 @@ impl Document {
 
     #[inline]
     /// File path on disk.
-    pub fn path(&self) -> Option<&PathBuf> {
-        self.path.as_ref()
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// File path as a URL.
@@ -2150,7 +2168,7 @@ impl Document {
     }
 
     pub fn uri(&self) -> Option<helix_core::Uri> {
-        Some(self.path()?.clone().into())
+        Some(self.path()?.into())
     }
 
     #[inline]

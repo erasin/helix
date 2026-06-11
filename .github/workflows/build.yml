@@ -5,6 +5,13 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 env:
   MSRV: "1.90"
   # This key can be changed to bust the cache of tree-sitter grammars.
@@ -19,21 +26,10 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
 
-      - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@master
+      - uses: ./.github/actions/rust-setup
         with:
           toolchain: ${{ env.MSRV }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "build"
-
-      - name: Cache tree-sitter grammars
-        uses: actions/cache@v5
-        with:
-          path: runtime/grammars
-          key: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-${{ hashFiles('languages.toml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-
+          cache-key: build
 
       - name: Run cargo check
         run: cargo check
@@ -50,21 +46,12 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
 
-      - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@master
+      - uses: ./.github/actions/rust-setup
         with:
           toolchain: ${{ env.MSRV }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "build"
-
-      - name: Cache tree-sitter grammars
-        uses: actions/cache@v5
-        with:
-          path: runtime/grammars
-          key: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-${{ hashFiles('languages.toml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-
+          cache-key: build
+          cache-grammars: 'true'
+          grammar-cache-version: ${{ env.GRAMMAR_CACHE_VERSION }}
 
       - name: Run cargo test
         run: cargo test --workspace
@@ -74,7 +61,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
+        os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
 
   lints:
     name: Lints
@@ -84,22 +71,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
 
-      - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@master
+      - uses: ./.github/actions/rust-setup
         with:
           toolchain: ${{ env.MSRV }}
           components: rustfmt, clippy
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "build"
-
-      - name: Cache tree-sitter grammars
-        uses: actions/cache@v5
-        with:
-          path: runtime/grammars
-          key: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-${{ hashFiles('languages.toml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-
+          cache-key: build
 
       - name: Run cargo fmt
         run: cargo fmt --all --check
@@ -120,21 +96,12 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
 
-      - name: Install MSRV toolchain
-        uses: dtolnay/rust-toolchain@master
+      - uses: ./.github/actions/rust-setup
         with:
           toolchain: ${{ env.MSRV }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "build"
-
-      - name: Cache tree-sitter grammars
-        uses: actions/cache@v5
-        with:
-          path: runtime/grammars
-          key: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-${{ hashFiles('languages.toml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-stable-v${{ env.GRAMMAR_CACHE_VERSION }}-tree-sitter-grammars-
+          cache-key: build
+          cache-grammars: 'true'
+          grammar-cache-version: ${{ env.GRAMMAR_CACHE_VERSION }}
 
       - name: Validate queries
         run: cargo xtask query-check

@@ -830,6 +830,7 @@ struct RenderTreeParams<'a, T> {
 fn render_tree<'a, T: TreeViewItem>(
     params: RenderTreeParams<'a, T>,
     ancestor_indices: &HashSet<usize>,
+    vcs_styles: &HashMap<PathBuf, Style>,
 ) -> Vec<RenderedLine<'a>> {
     let RenderTreeParams {
         tree,
@@ -848,7 +849,11 @@ fn render_tree<'a, T: TreeViewItem>(
     let style = if is_selected {
         selected_style
     } else {
-        text_style
+        // Use VCS diff style if available, otherwise default text style
+        vcs_styles
+            .get(&tree.item.path())
+            .copied()
+            .unwrap_or(text_style)
     };
 
     let ancestor_style = if is_ancestor_of_current_item {
@@ -923,6 +928,7 @@ fn render_tree<'a, T: TreeViewItem>(
                     indent_guide_char,
                 },
                 ancestor_indices,
+                vcs_styles,
             )
         }))
         .collect()
@@ -935,12 +941,13 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
         prompt_area: Rect,
         surface: &mut Surface,
         cx: &mut Context,
+        vcs_style_map: &HashMap<PathBuf, Style>,
     ) {
         if let Some((_, prompt)) = self.search_prompt.as_mut() {
             prompt.render_prompt(prompt_area, surface, cx)
         }
 
-        self.render_lines(area, cx)
+        self.render_lines(area, cx, vcs_style_map)
             .into_iter()
             .enumerate()
             .for_each(|(index, line)| {
@@ -966,7 +973,12 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             });
     }
 
-    fn render_lines(&mut self, area: Rect, cx: &mut Context) -> Vec<RenderedLine<'_>> {
+    fn render_lines(
+        &mut self,
+        area: Rect,
+        cx: &mut Context,
+        vcs_style_map: &HashMap<PathBuf, Style>,
+    ) -> Vec<RenderedLine<'_>> {
         if let Some(pre_render) = self.pre_render.take() {
             pre_render(self, area);
         }
@@ -1003,7 +1015,7 @@ impl<T: TreeViewItem + Clone> TreeView<T> {
             }
         }
 
-        let lines = render_tree(params, &ancestor_indices);
+        let lines = render_tree(params, &ancestor_indices, vcs_style_map);
 
         self.max_len = lines
             .iter()

@@ -4,6 +4,7 @@
 
 use anyhow::{anyhow, bail, Result};
 use arc_swap::ArcSwap;
+use std::collections::HashMap;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -55,6 +56,29 @@ impl DiffProviderRegistry {
                     None
                 }
             })
+    }
+
+    /// Synchronously collect all changed files in the given directory.
+    /// Returns a map from file path to `FileChange`.
+    pub fn changed_files_sync(&self, cwd: &Path) -> HashMap<PathBuf, FileChange> {
+        let result = std::cell::RefCell::new(HashMap::new());
+        for provider in &self.providers {
+            if provider
+                .for_each_changed_file(cwd, |change: Result<FileChange>| {
+                    if let Ok(change) = change {
+                        result
+                            .borrow_mut()
+                            .insert(change.path().to_path_buf(), change);
+                    }
+                    true
+                })
+                .is_ok()
+                && !result.borrow().is_empty()
+            {
+                break;
+            }
+        }
+        result.into_inner()
     }
 
     /// Fire-and-forget changed file iteration. Runs everything in a background task. Keeps

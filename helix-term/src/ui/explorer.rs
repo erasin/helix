@@ -5,6 +5,7 @@ use crate::{
 };
 use anyhow::{bail, ensure, Result};
 use helix_core::Position;
+use helix_vcs::FileChange;
 use helix_view::{
     editor::{Action, ExplorerPosition},
     graphics::{CursorKind, Rect},
@@ -15,6 +16,7 @@ use helix_view::{
     Editor,
 };
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::{borrow::Cow, fs::DirEntry};
 use tree::{TreeOp, TreeView, TreeViewItem};
@@ -162,6 +164,7 @@ pub struct Explorer {
     #[allow(clippy::type_complexity)]
     on_next_key: Option<Box<dyn FnMut(&mut Context, &mut Self, &KeyEvent) -> EventResult>>,
     column_width: u16,
+    vcs_status: HashMap<PathBuf, FileChange>,
 }
 
 impl Explorer {
@@ -169,7 +172,7 @@ impl Explorer {
         let current_root = std::env::current_dir()
             .unwrap_or_else(|_| "./".into())
             .canonicalize()?;
-        Ok(Self {
+        let mut explorer = Self {
             tree: Self::new_tree_view(current_root.clone())?,
             history: vec![],
             show_help: false,
@@ -177,7 +180,10 @@ impl Explorer {
             prompt: None,
             on_next_key: None,
             column_width: cx.editor.config().explorer.column_width as u16,
-        })
+            vcs_status: HashMap::new(),
+        };
+        explorer.refresh_vcs_status(cx);
+        Ok(explorer)
     }
 
     fn new_tree_view(root: PathBuf) -> Result<TreeView<FileInfo>> {
@@ -387,6 +393,13 @@ impl Explorer {
         })
     }
 
+    fn refresh_vcs_status(&mut self, cx: &Context) {
+        self.vcs_status = cx
+            .editor
+            .diff_providers
+            .changed_files_sync(&self.state.current_root);
+    }
+
     fn render_tree(
         &mut self,
         area: Rect,
@@ -394,7 +407,28 @@ impl Explorer {
         surface: &mut Surface,
         cx: &mut Context,
     ) {
-        self.tree.render(area, prompt_area, surface, cx);
+        // Build VCS style map: path -> resolved theme style
+        let added = cx.editor.theme.get("diff.plus");
+        let modified = cx.editor.theme.get("diff.delta");
+        let conflict = cx.editor.theme.get("diff.delta.conflict");
+        let deleted = cx.editor.theme.get("diff.minus");
+        let renamed = cx.editor.theme.get("diff.delta.moved");
+        let vcs_style_map: HashMap<PathBuf, Style> = self
+            .vcs_status
+            .iter()
+            .map(|(path, change)| {
+                let style = match change {
+                    FileChange::Untracked { .. } => added,
+                    FileChange::Modified { .. } => modified,
+                    FileChange::Conflict { .. } => conflict,
+                    FileChange::Deleted { .. } => deleted,
+                    FileChange::Renamed { .. } => renamed,
+                };
+                (path.clone(), style)
+            })
+            .collect();
+        self.tree
+            .render(area, prompt_area, surface, cx, &vcs_style_map);
     }
 
     fn render_embed(
@@ -715,13 +749,26 @@ impl Component for Explorer {
                 key!('q') => self.close(),
                 key!('?') => self.toggle_help(),
                 key!('a') => self.new_create_file_or_folder_prompt(cx)?,
-                shift!('B') => self.change_root_parent_folder()?,
-                key!(']') => self.change_root_to_current_folder()?,
-                key!('[') => self.go_to_previous_root(),
+                shift!('B') => {
+                    self.change_root_parent_folder()?;
+                    self.refresh_vcs_status(cx);
+                }
+                key!(']') => {
+                    self.change_root_to_current_folder()?;
+                    self.refresh_vcs_status(cx);
+                }
+                key!('[') => {
+                    self.go_to_previous_root();
+                    self.refresh_vcs_status(cx);
+                }
                 key!('d') => self.new_remove_prompt()?,
                 key!('r') => self.new_rename_prompt(cx)?,
                 key!('-') | key!('_') => self.decrease_size(),
                 key!('+') | key!('=') => self.increase_size(),
+                shift!('R') => {
+                    self.tree.refresh()?;
+                    self.refresh_vcs_status(cx);
+                }
                 _ => {
                     self.tree
                         .handle_key_event(&Event::Key(*key_event), cx, &mut self.state);

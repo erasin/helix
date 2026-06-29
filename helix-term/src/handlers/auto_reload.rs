@@ -38,15 +38,22 @@ impl ReloadHandler {
             return;
         }
         let fs_events = event.fs_events.clone();
-        if !fs_events
+
+        let has_modified = fs_events
             .iter()
-            .any(|event| event.ty == EventType::Modified)
-        {
+            .any(|event| event.ty == EventType::Modified);
+        let has_create_or_remove = fs_events
+            .iter()
+            .any(|event| matches!(event.ty, EventType::Create | EventType::Delete));
+
+        if !has_modified && !has_create_or_remove {
             return;
         }
+
         let prompt_if_modified = self.prompt_if_modified.load(atomic::Ordering::Relaxed);
         job::dispatch_blocking(move |editor, compositor| {
             let mut vcs_reload = false;
+            let explorer_needs_refresh = has_create_or_remove;
 
             for fs_event in &*fs_events {
                 if fs_event.ty != EventType::Modified {
@@ -62,7 +69,11 @@ impl ReloadHandler {
             }
 
             if vcs_reload {
-                reload_vcs_diffs(editor);
+                reload_vcs_diffs(editor, compositor);
+            }
+
+            if explorer_needs_refresh {
+                refresh_explorer_tree(compositor);
             }
         });
     }
@@ -226,8 +237,8 @@ fn handle_document_change(
     }
 }
 
-/// Reload VCS diffs for all documents
-fn reload_vcs_diffs(editor: &mut Editor) {
+/// Reload VCS diffs for all documents and refresh explorer VCS status indicators.
+fn reload_vcs_diffs(editor: &mut Editor, compositor: &mut Compositor) {
     for doc in editor.documents.values_mut() {
         let Some(path) = doc.path() else {
             continue;
@@ -235,6 +246,25 @@ fn reload_vcs_diffs(editor: &mut Editor) {
         match editor.diff_providers.get_diff_base(path) {
             Some(diff_base) => doc.set_diff_base(diff_base),
             None => doc.diff_handle = None,
+        }
+    }
+    // Refresh explorer VCS status indicators (e.g., after branch switch or commit)
+    if let Some(editor_view) = compositor.find::<crate::ui::EditorView>() {
+        if let Some(explorer) = editor_view.explorer.as_mut() {
+            explorer.refresh_vcs_status_from_editor(editor);
+        }
+    }
+}
+
+/// Refresh the explorer tree when files are created or deleted externally.
+fn refresh_explorer_tree(compositor: &mut Compositor) {
+    if let Some(editor_view) = compositor.find::<crate::ui::EditorView>() {
+        if let Some(explorer) = editor_view.explorer.as_mut() {
+            if explorer.is_opened() {
+                if let Err(err) = explorer.refresh_tree() {
+                    log::error!("failed to refresh explorer tree: {err}");
+                }
+            }
         }
     }
 }

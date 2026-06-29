@@ -393,9 +393,21 @@ impl Explorer {
         })
     }
 
+    /// Refresh the tree view for external changes (file creation/deletion).
+    pub(crate) fn refresh_tree(&mut self) -> Result<()> {
+        self.tree.refresh()
+    }
+
     fn refresh_vcs_status(&mut self, cx: &Context) {
         self.vcs_status = cx
             .editor
+            .diff_providers
+            .changed_files_sync(&self.state.current_root);
+    }
+
+    /// Refresh VCS status using only &Editor (for contexts without full Context).
+    pub(crate) fn refresh_vcs_status_from_editor(&mut self, editor: &Editor) {
+        self.vcs_status = editor
             .diff_providers
             .changed_files_sync(&self.state.current_root);
     }
